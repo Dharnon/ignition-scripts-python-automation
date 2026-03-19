@@ -272,116 +272,150 @@ def piezasMaquinaTurno_Automatica(celula, referencia):
     except Exception as e:
         print "Error en contarProduccionTurno():", str(e)
         return -1
- 
 
-def completarTarea(celula, num, nombreTarea):
-	# Tareas.Data.TagsMaquina.completarTarea(celula, num, nombreTarea)
-    """
-    Script para completar una tarea específica en el dataset de contadores
-    
-    Parámetros:
-    - rutaTag: Ruta completa al tag del dataset (ej: "[default]Datos_Celula/Celula1/Maq_1/ContadorTareas")
-    - nombreTarea: Nombre de la tarea a completar
-    
-    Retorno:
-    - 0: Contador se puso a cero (era negativo)
-    - contador: Valor actual del contador (entre 1 y ocurrencia-1)
-    - -1: Contador mayor que ocurrencia, descargar YA!
-    - -2: Error
-    """
-    #---PARAMETROS--------------------------------------------------
-    tp = constantes.tag_provider
-   	#---------------------------------------------------------------
-   	
-    try:
-		# Leemos la ruta al tag
-	    rutaTag = tp + "Datos_Celula/Celula" + celula + "/Maq_" + str(num) + "/ContadorTareas"
-		
-	    # --- Leer dataset actual ---
-	    dsOld = system.tag.readBlocking([rutaTag])[0].value
-	    if dsOld is None or dsOld.getRowCount() == 0:
-	        print("Error: No hay dataset en la ruta especificada")
-	        return -2
-	    
-	    # --- Validar columnas ---
-	    expectedCols = ["fecha", "tarea", "ocurrencia", "contador", "elementos"]
-	    colNames = list(dsOld.getColumnNames())
-	    for col in expectedCols:
-	        if col not in colNames:
-	            print("Error: Dataset corrupto - falta columna: " + col)
-	            return -2
-	    
-	    # --- Buscar y procesar la tarea ---
-	    tareaEncontrada = False
-	    newRows = []
-	    resultado = -1
-	    
-	    for i in range(dsOld.getRowCount()):
-	        try:
-	            fecha = dsOld.getValueAt(i, "fecha")
-	            tarea = dsOld.getValueAt(i, "tarea")
-	            ocurrencia = dsOld.getValueAt(i, "ocurrencia")
-	            contador = dsOld.getValueAt(i, "contador")
-	            elementos = dsOld.getValueAt(i, "elementos")
-	            
-	            # Si encontramos la tarea específica
-	            if tarea == nombreTarea:
-	                tareaEncontrada = True
-	                
-	                # Validar ocurrencia
-	                if ocurrencia is None or ocurrencia <= 0:
-	                    print("Error: Ocurrencia inválida para la tarea: " + nombreTarea)
-	                    return -2
-	                
-	                # Realizar la operación: contador = contador - ocurrencia
-	                contador = contador - ocurrencia
-	                contador = int(contador)
-	                print contador
-	                
-	                # Evaluar el resultado según las condiciones
-	                if contador < 0:
-	                    contador = 0
-	                    resultado = 0
-	                    print("Tarea completada: " + nombreTarea + " - Contador puesto a cero")
-	                elif contador >= 0 and contador < ocurrencia:
-	                    resultado = contador
-	                    print("Tarea completada: " + nombreTarea + " - Contador actual: " + str(contador))
-	                else: # contador >= ocurrencia
-	                    resultado = -1
-	                    print("Contador mayor que ocurrencia para la tarea: " + nombreTarea)
-	            
-	            # Agregar la fila (modificada o no) al nuevo dataset
-	            newRows.append([fecha, tarea, ocurrencia, contador, elementos])
-	            
-	        except Exception as e:
-	            print("Error procesando fila " + str(i) + ": " + str(e))
-	            continue
-	    
-	    # --- Verificar si se encontró la tarea ---
-	    if not tareaEncontrada:
-	        print("Error: No se encontró la tarea especificada: " + nombreTarea)
-	        return -2
-	    
-	    # --- Verificar que haya filas válidas ---
-	    if len(newRows) == 0:
-	        print("Error: No hay datos válidos en el dataset")
-	        return -2
-	    
-	    # --- Crear dataset y escribir ---
-	    headers = ["fecha", "tarea", "ocurrencia", "contador", "elementos"]
-	    dsNew = ds.toDataSet(headers, newRows)
-	    writeResult = system.tag.writeBlocking([rutaTag], [dsNew])
-	    
-	    if not writeResult[0].isGood():
-	        print("Error: No se pudo escribir el dataset actualizado")
-	        return -2
-	    
-	    print("Dataset actualizado correctamente")
-	    return resultado
-        
-    except Exception as e:
-        print("Error general en completarTarea: " + str(e))
-        return -2
+
+def usaContadorCelula(nombreTarea):
+	# Tareas.Data.TagsMaquina.usaContadorCelula(nombreTarea)
+	"""
+	Devuelve True si la tarea debe avanzar con el contador de celula automatica.
+	Regla de negocio actual:
+	- Todas las tareas recurrentes usan contador de celula,
+	- excepto los cambios de herramienta (CH), que siguen usando su logica de vida util.
+	"""
+	if nombreTarea is None:
+		return False
+	# CH sigue siendo excepcion de contador
+	return not str(nombreTarea).startswith("CH")
+
+
+def completarTarea(celula, referencia, num, nombreTarea):
+	# Tareas.Data.TagsMaquina.completarTarea(celula, referencia, num, nombreTarea)
+	"""
+	Completa una tarea en el dataset `ContadorTareas` y devuelve el estado del contador.
+
+	Nuevo modelo:
+	- Para tareas piece-dependent (no CH):
+	  - `contador` se interpreta como baseline del contador de celula.
+	  - Se compara contra `piezasMaquinaTurno_Automatica(celula, referencia)`.
+	- Para tareas CH:
+	  - Se mantiene el comportamiento anterior (contador local por maquina).
+
+	Retorno:
+	- 0: completada "antes de tiempo" (delta < ocurrencia) → se reprograma desde ahora.
+	- contador (1..ocurrencia-1): piezas ya consumidas hacia el siguiente ciclo.
+	- -1: delta >= ocurrencia → se ha sobrepasado el ciclo, descargar/reprogramar YA.
+	- -2: error.
+	"""
+	tp = constantes.tag_provider
+
+	try:
+		# Ruta al dataset de contadores por maquina
+		rutaTag = tp + "Datos_Celula/Celula" + celula + "/Maq_" + str(num) + "/ContadorTareas"
+
+		dsOld = system.tag.readBlocking([rutaTag])[0].value
+		if dsOld is None or dsOld.getRowCount() == 0:
+			print("Error: No hay dataset en la ruta especificada")
+			return -2
+
+		expectedCols = ["fecha", "tarea", "ocurrencia", "contador", "elementos"]
+		colNames = list(dsOld.getColumnNames())
+		for col in expectedCols:
+			if col not in colNames:
+				print("Error: Dataset corrupto - falta columna: " + col)
+				return -2
+
+		usaCelula = usaContadorCelula(nombreTarea)
+
+		# Si usa contador de celula, obtenemos el valor actual robusto
+		if usaCelula:
+			contadorCelula = Tareas.Data.TagsMaquina.piezasMaquinaTurno_Automatica(celula, referencia)
+			if contadorCelula < 0:
+				print("Error al obtener piezas de celula automatica")
+				return -2
+		else:
+			contadorCelula = None
+
+		tareaEncontrada = False
+		newRows = []
+		resultado = -1
+
+		for i in range(dsOld.getRowCount()):
+			try:
+				fecha = dsOld.getValueAt(i, "fecha")
+				tarea = dsOld.getValueAt(i, "tarea")
+				ocurrencia = dsOld.getValueAt(i, "ocurrencia")
+				contador = dsOld.getValueAt(i, "contador")
+				elementos = dsOld.getValueAt(i, "elementos")
+
+				if tarea == nombreTarea:
+					tareaEncontrada = True
+
+					if ocurrencia is None or ocurrencia <= 0:
+						print("Error: Ocurrencia inválida para la tarea: " + nombreTarea)
+						return -2
+
+					if usaCelula:
+						# Baseline almacenado en contador, valor actual de celula en contadorCelula
+						if contador is None:
+							contador = 0
+						delta = int(contadorCelula) - int(contador)
+						print "Delta piezas celula para tarea", nombreTarea, ":", delta
+
+						if delta < 0:
+							# contador de celula retrocedio (reinicio de turno, etc.) → reset baseline
+							delta = 0
+
+						if delta < ocurrencia:
+							# No se ha llegado al ciclo completo
+							resultado = delta if delta > 0 else 0
+						else:
+							# Hemos alcanzado o sobrepasado el ciclo
+							resultado = -1
+
+						# Actualizamos baseline al valor actual de celula para el siguiente ciclo
+						contador = int(contadorCelula)
+					else:
+						# Comportamiento antiguo para CH: contador local por maquina
+						contador = contador - ocurrencia
+						contador = int(contador)
+						print contador
+
+						if contador < 0:
+							contador = 0
+							resultado = 0
+						elif contador >= 0 and contador < ocurrencia:
+							resultado = contador
+						else:
+							resultado = -1
+
+				newRows.append([fecha, tarea, ocurrencia, contador, elementos])
+
+			except Exception as e:
+				print("Error procesando fila " + str(i) + ": " + str(e))
+				continue
+
+		if not tareaEncontrada:
+			print("Error: No se encontró la tarea especificada: " + nombreTarea)
+			return -2
+
+		if len(newRows) == 0:
+			print("Error: No hay datos válidos en el dataset")
+			return -2
+
+		headers = ["fecha", "tarea", "ocurrencia", "contador", "elementos"]
+		dsNew = ds.toDataSet(headers, newRows)
+		writeResult = system.tag.writeBlocking([rutaTag], [dsNew])
+
+		if not writeResult[0].isGood():
+			print("Error: No se pudo escribir el dataset actualizado")
+			return -2
+
+		print("Dataset actualizado correctamente")
+		return resultado
+
+	except Exception as e:
+		print("Error general en completarTarea: " + str(e))
+		return -2
     
 def actualizarPiezasPorTurno(celula, num):
 	# Tareas.Data.TagsMaquina.actualizarPiezasPorTurno(celula, num)

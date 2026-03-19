@@ -479,7 +479,57 @@ def deleteTable_Secuencia():
 	except Exception as e:
 	    system.gui.errorBox("Error al borrar los datos: " + str(e))
 	return True
-	
+
+
+def obtenerMinutoMC(celula, referencia):
+	# Tareas.Data.fromExcelToDB.obtenerMinutoMC(celula, referencia)
+	"""
+	Obtiene el tiempo de ciclo de la máquina crítica (MC) para una pareja
+	(celula, referencia) a partir de la tabla _Secuencia.
+
+	Regla de negocio (ver R104587-D):
+	- existe una única fila marcada como MC para esa celula/referencia;
+	- el minuto de MC se toma del campo min_std de esa fila.
+
+	Si no se encuentra exactamente una fila MC, se registra en el logger
+	y se lanza una excepción para abortar la normalización.
+	"""
+	database = constantes.Database_Tareas
+	tablaSecuencia = constantes.LINEA + "_Secuencia"
+
+	query = """
+		SELECT min_std
+		FROM {tabla}
+		WHERE celula = ?
+		  AND referencia = ?
+		  AND tipo = 'MC'
+	""".format(tabla=tablaSecuencia)
+
+	params = [str(celula), str(referencia)]
+
+	try:
+		data = system.db.runPrepQuery(query, params, database)
+		logger = system.util.getLogger("Tareas.Data.fromExcelToDB.obtenerMinutoMC")
+
+		if not data or len(data) == 0:
+			logger.error("No se encontró fila MC para celula=%s referencia=%s" % (celula, referencia))
+			raise ValueError("Sin fila MC en _Secuencia para celula=%s referencia=%s" % (celula, referencia))
+
+		if len(data) > 1:
+			logger.error("Más de una fila MC para celula=%s referencia=%s" % (celula, referencia))
+			raise ValueError("MC ambiguo en _Secuencia para celula=%s referencia=%s" % (celula, referencia))
+
+		mc_min = data[0][0]
+		logger.info("MC resuelto para celula=%s referencia=%s -> min_std=%s" % (celula, referencia, str(mc_min)))
+		return float(mc_min)
+
+	except Exception as e:
+		system.util.getLogger("Tareas.Data.fromExcelToDB.obtenerMinutoMC").error(
+			"Error obteniendo MC para celula=%s referencia=%s: %s" % (celula, referencia, str(e))
+		)
+		raise
+
+
 def tareasTable(celula, referencia):
 	# Tareas.Data.fromExcelToDB.tareasTable(celula, referencia)
 	#---INFO-----------------------------------------------------------
@@ -496,9 +546,11 @@ def tareasTable(celula, referencia):
 	
 	#---Borrar tabla
 	Tareas.Data.fromExcelToDB.deleteTable(tablaTareas, referencia, celula)
-	
-	#---Insertar tabla
-	
+
+	#---Resolver MC para esta celula/referencia-----------------------
+	mc_min = Tareas.Data.fromExcelToDB.obtenerMinutoMC(celula, referencia)
+
+	#---Insertar tabla con minutos normalizados a MC------------------
 	query = """
 	INSERT INTO [dbo].[{tablaTareas}] (
 	    referencia,
@@ -524,7 +576,7 @@ def tareasTable(celula, referencia):
 	    prioridad,
 	    celula,
 	    min_std,
-	    NULL AS min
+	    ? AS min
 	FROM 
 	    {tablaSecCompl}
 	WHERE
@@ -538,7 +590,8 @@ def tareasTable(celula, referencia):
 
 	# Ejecutar el query
 	try:
-	    system.db.runPrepUpdate(query, [referencia, celula], database)
+	    # Orden de parámetros: MC, referencia, celula
+	    system.db.runPrepUpdate(query, [mc_min, referencia, celula], database)
 	except Exception as e:
 	    system.gui.errorBox("Error al insertar los datos: " + str(e))
 	

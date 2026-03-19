@@ -148,11 +148,11 @@ def completarTarea(celula, referencia, tipoMaq, tarea, num, manual):
 	logger.info("Tarea completada: {} de la celula: {} en la maquina: {}".format(tarea, celula, tipoMaq))
 	#-----------------------------------
 	#try:
-	rpt = Tareas.Data.General.obtenerRitmoProd(celula, referencia, tipoMaq) # Obtenemos el ritmo de produccion
+	rpt = Tareas.Data.General.obtenerRitmoProd(celula, referencia, tipoMaq) # Obtenemos el ritmo de produccion (ya MC-normalizado)
 	ocurrencia = Tareas.Data.General.obtenerOcurrencia(celula, referencia, tipoMaq, tarea) # Obtenemos ocurrencia
 	
-	# Observamos el contador del tag del UDT
-	contador = Tareas.Data.TagsMaquina.completarTarea(celula, num, tarea)
+	# Observamos el contador efectivo (celula automatica o logica local segun tipo de tarea)
+	contador = Tareas.Data.TagsMaquina.completarTarea(celula, referencia, num, tarea)
 	
 	# Recalculamos los tiempo de esa tarea segun el contador
 	if contador == 0: # Se ha completado antes de lo esperado, se recalcula desde ahora

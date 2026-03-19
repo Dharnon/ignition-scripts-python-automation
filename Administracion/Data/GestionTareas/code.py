@@ -369,33 +369,47 @@ def editarMinutosMaquina(referencia, maquina, celula, minutos):
 	"""
 	#---PARAMETROS---------------------------------------------
 	tablaTareas = constantes.LINEA + "_Tareas"
+	tablaSecuencia = constantes.LINEA + "_Secuencia"
 	database = constantes.Database_Tareas
 	#----------------------------------------------------------
-	
+
 	try:
-		#---Actualizar en base de datos------------------------------------
-		query = """
-		UPDATE {tabla} 
-		    SET min = ?
+		# 1) Actualizar el origen de verdad de MC en _Secuencia (fila tipo='MC')
+		query_mc = """
+		UPDATE {tabla}
+		    SET min_std = ?
 		    WHERE referencia = ?
-		    AND maquina = ?
-		    AND celula = ?
-		    AND tarea LIKE 'Tiempo de m%'
-		    AND tarea LIKE '%quina 1/1'
-		""".format(tabla=tablaTareas)
-		
-		params = [
-			minutos, # Nuevo valor para minutos
+		      AND celula = ?
+		      AND tipo = 'MC'
+		""".format(tabla=tablaSecuencia)
+
+		params_mc = [
+			minutos,
 			referencia,
-			maquina,
 			celula
 		]
-		system.db.runPrepUpdate(query, params, database)
-		
-		Tareas.Data.fromExcelToDB.insertarTareasEnTablaResumen() # Actualizar la tabla tareas resumen
-		
+		system.db.runPrepUpdate(query_mc, params_mc, database)
+
+		# 2) Propagar el nuevo MC a todas las tareas recurrentes de esa celula/referencia en _Tareas
+		query_tareas = """
+		UPDATE {tabla}
+		    SET min = ?
+		    WHERE referencia = ?
+		      AND celula = ?
+		""".format(tabla=tablaTareas)
+
+		params_tareas = [
+			minutos,
+			referencia,
+			celula
+		]
+		system.db.runPrepUpdate(query_tareas, params_tareas, database)
+
+		# 3) Refrescar tabla resumen solo para esta celula/referencia
+		Tareas.Data.fromExcelToDB.insertarTareasEnTablaResumen(celula, referencia)
+
 		return True
-		
+
 	except Exception as e:
 		print("Error en Administracion.Data.GestionTareas.editarMinutosMaquina(): " + str(e))
-        return {"error": "Error interno al procesar tareas"}
+		return {"error": "Error interno al procesar tareas"}
