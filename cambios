@@ -1,0 +1,274 @@
+limpieza
+
+def crearTareaLimpieza(celula):
+    # Tareas.Data.Independiente.crearTareaLimpieza(celula)
+    """
+    Script que programa automáticamente una tarea de limpieza para la célula indicada.
+    Usa la query avanzada con INNER JOIN para determinar la última limpieza real.
+    """
+    from system.dataset import toDataSet
+    
+    #---PARAMETROS ORIGINALES----------------------------------
+    tp = constantes.tag_provider
+    celulaLinea = constantes.celulaLinea
+    tagPath = tp + "Dataset/Tareas_Celula" + celulaLinea
+    #----------------------------------------------------------
+    
+    try:
+        # 1. Leer dataset actual de tareas para el candado y candidatos
+        dataset = system.tag.readBlocking([tagPath])[0].value
+        if dataset is None:
+            return "Error: No se pudo leer el dataset del tag."
+            
+        columnas = list(dataset.getColumnNames())
+        
+        # --- [NUEVO] PASO 1.5: CANDADO DE EXISTENCIA ---
+        celula_buscada = str(celula).strip().upper()
+        for i in range(dataset.getRowCount()):
+            t_nom = str(dataset.getValueAt(i, "tarea")).strip().upper()
+            t_cel = str(dataset.getValueAt(i, "celula")).strip().upper()
+            t_est = dataset.getValueAt(i, "completado")
+            
+            if "LIMPIEZA" in t_nom and t_cel == celula_buscada and t_est == 0:
+                print "CANDADO: Ya existe Limpieza pendiente para %s. Abortando." % celula
+                return True 
+        # -----------------------------------------------
+
+        # 2. Obtener última limpieza completada (QUERY ACTUALIZADA)
+        # Esta es la query que me has pasado con el JOIN y filtros específicos
+        query = """
+            SELECT TOP 1 C.fecha 
+            FROM G_Pilot_Completados C
+            INNER JOIN G_Pilot_Tareas_Resumen T ON C.idTareasR = T.id
+            WHERE T.tarea LIKE 'Limpieza%' 
+              AND T.celula = ? 
+              AND T.activo = 1 
+              AND C.InicioFin = 1
+            ORDER BY C.fecha DESC
+        """
+        try:
+            # Usamos runScalarPrepQuery para mayor seguridad con el parámetro [celula]
+            ultima_limpieza = system.db.runScalarPrepQuery(query, [celula])
+        except:
+            ultima_limpieza = None
+            
+        if ultima_limpieza is None:
+            # Si no hay registros, usamos una fecha muy antigua (20 años atrás)
+            ultima_limpieza = system.date.addYears(system.date.now(), -20)
+
+        # 3. Determinar hora actual y turno (Manteniendo tu lógica original)
+        ahora = system.date.now()
+        hora_actual = system.date.getHour24(ahora)
+        
+        if 6 <= hora_actual < 14:
+            inicio_turno = system.date.midnight(ahora)
+            inicio_turno = system.date.addHours(inicio_turno, 6)
+            fin_turno = system.date.addHours(inicio_turno, 8)
+        elif 14 <= hora_actual < 22:
+            inicio_turno = system.date.midnight(ahora)
+            inicio_turno = system.date.addHours(inicio_turno, 14)
+            fin_turno = system.date.addHours(inicio_turno, 8)
+        else:
+            inicio_turno = system.date.midnight(ahora)
+            if hora_actual < 6:
+                inicio_turno = system.date.addDays(inicio_turno, -1)
+                inicio_turno = system.date.addHours(inicio_turno, 22)
+            else:
+                inicio_turno = system.date.addHours(inicio_turno, 22)
+            fin_turno = system.date.addHours(inicio_turno, 8)
+        
+        # 4. Buscar candidatos filtrando por celula
+        candidatos = []
+        for i in range(dataset.getRowCount()):
+            row = {col: dataset.getValueAt(i, col) for col in columnas}
+            
+            if row["completado"] == 0 and str(row["celula"]).strip() == str(celula).strip():
+                t_up = str(row["tarea"]).upper()
+                m_up = str(row["maquina"]).upper()
+                if t_up.startswith("CH") and m_up == "TALLADORA":
+                    candidatos.append((row, 1))
+                elif t_up.startswith("CH") and m_up == "AFEITADORA":
+                    candidatos.append((row, 2))
+                elif "GRAFICO" in t_up:
+                    candidatos.append((row, 3))
+        
+        candidatos.sort(key=lambda x: (x[1], x[0]["cuando"]))
+        
+        # 5. Validar candidatos (Regla 4 horas)
+        tarea_limpieza = None
+        for row, prioridad in candidatos:
+            diff_horas = system.date.hoursBetween(ultima_limpieza, row["cuando"])
+            if diff_horas >= 4:
+                tarea_limpieza = row
+                break
+        
+        # 6. Definir datos de la nueva tarea
+        if not tarea_limpieza:
+            fecha_final = system.date.addHours(fin_turno, -2)
+        else:
+            fecha_final = tarea_limpieza["cuando"]
+
+        dict_final = {
+            "tarea": "Limpieza",
+            "cuando": fecha_final,
+            "celula": celula,
+            "maquina": "GENERAL",
+            "elemento": "Limpieza del puesto",
+            "ocurrencia": 0,
+            "completado": 0
+        }
+        
+        # 7. Insertar en dataset
+        nuevas_filas = [ [dataset.getValueAt(i, col) for col in columnas] for i in range(dataset.getRowCount()) ]
+        nuevas_filas.append([dict_final.get(col, None) for col in columnas])
+        
+        dataset_actualizado = toDataSet(columnas, nuevas_filas)
+        system.tag.writeBlocking([tagPath], [dataset_actualizado])
+        
+        print("✅ Tarea creada con éxito para: " + str(fecha_final))
+        return True
+    
+    except Exception as e:
+        return("Error en crearTareaLimpieza(): " + str(e))
+    
+
+    						#---GRAFICO---------------------------------------------------------------
+						if tarea.startswith("Grafico"):
+						    proxFecha = Tareas.Data.General.obtenerProximaFecha(celula, tipoMaq, tarea)
+						    now = system.date.now()
+						
+						    # 1) Do not process before due time
+						    if system.date.minutesBetween(now, proxFecha) <= 0:
+						        valor = Tareas.Data.GearFlow.grafico(
+						            proxFecha,
+						            tipoSolicitud="CONTROL",
+						            referencia=referencia,
+						            celula=celula,
+						            herramienta=tipoMaq
+						        )
+						
+						        # 2) Dedupe per scheduled occurrence (proxFecha)
+						        lastProcPath = tp + "Datos_Celula/Celula" + str(celula) + "/Maq_" + str(num) + "/LastGraficoProxFecha"
+						        lastProc = system.tag.readBlocking([lastProcPath])[0].value
+						
+						        sameOccurrence = (lastProc is not None and lastProc == proxFecha)
+						
+						        if valor == "OK" and not sameOccurrence:
+						            Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+						            system.tag.writeBlocking([lastProcPath], [proxFecha])
+						
+						# ...existing code...
+                              
+
+                              se ha cambiado la parte de completar tarea en tags maquina
+        
+        # ...existing code...
+
+def completarTarea(celula, num, nombreTarea):
+    # Tareas.Data.TagsMaquina.completarTarea(celula, num, nombreTarea)
+    """
+    Script para completar una tarea específica en el dataset de contadores
+    
+    Retorno:
+    - 0: Contador se puso a cero (era negativo)
+    - contador: Valor actual del contador (entre 1 y ocurrencia-1)
+    - -1: Contador mayor que ocurrencia, descargar YA!
+    - -2: Error
+    """
+    #---PARAMETROS--------------------------------------------------
+    tp = constantes.tag_provider
+    #---------------------------------------------------------------
+    
+    try:
+        rutaTag = tp + "Datos_Celula/Celula" + str(celula) + "/Maq_" + str(num) + "/ContadorTareas"
+        
+        # --- Leer dataset actual ---
+        dsOld = system.tag.readBlocking([rutaTag])[0].value
+        if dsOld is None or dsOld.getRowCount() == 0:
+            print("Error: No hay dataset en la ruta especificada")
+            return -2
+        
+        # --- Validar columnas ---
+        expectedCols = ["fecha", "tarea", "ocurrencia", "contador", "elementos"]
+        colNames = list(dsOld.getColumnNames())
+        for col in expectedCols:
+            if col not in colNames:
+                print("Error: Dataset corrupto - falta columna: " + col)
+                return -2
+        
+        # --- Buscar y procesar la tarea ---
+        tareaEncontrada = False
+        newRows = []
+        resultado = -2
+        
+        for i in range(dsOld.getRowCount()):
+            try:
+                fecha     = dsOld.getValueAt(i, "fecha")
+                tarea     = dsOld.getValueAt(i, "tarea")
+                ocurrencia = dsOld.getValueAt(i, "ocurrencia")
+                contador  = dsOld.getValueAt(i, "contador")
+                elementos = dsOld.getValueAt(i, "elementos")
+                
+                if tarea == nombreTarea:
+                    tareaEncontrada = True
+                    
+                    if ocurrencia is None or ocurrencia <= 0:
+                        print("Error: Ocurrencia invalida para la tarea: " + nombreTarea)
+                        return -2
+                    
+                    # FIX 1: Restar ocurrencia al contador
+                    contador = int(contador - ocurrencia)
+                    print("Contador tras restar ocurrencia: " + str(contador))
+                    
+                    if contador < 0:
+                        # Contador negativo → ponemos a 0
+                        contador = 0
+                        resultado = 0
+                        print("Tarea completada: " + nombreTarea + " - Contador puesto a cero")
+                    elif contador < ocurrencia:
+                        # Contador valido entre 0 y ocurrencia
+                        resultado = contador
+                        print("Tarea completada: " + nombreTarea + " - Contador actual: " + str(contador))
+                    else:
+                        # FIX 2: Contador sigue siendo >= ocurrencia (herramienta lleva mas del doble de vida)
+                        # Avisamos pero guardamos el contador restado para que en el siguiente ciclo se vuelva a completar
+                        resultado = -1
+                        print("Contador aun mayor que ocurrencia (" + str(contador) + " >= " + str(ocurrencia) + "). Se completara de nuevo en el siguiente ciclo.")
+                
+                newRows.append([fecha, tarea, ocurrencia, contador, elementos])
+                
+            except Exception as e:
+                print("Error procesando fila " + str(i) + ": " + str(e))
+                continue
+        
+        # --- Verificar si se encontro la tarea ---
+        if not tareaEncontrada:
+            print("Error: No se encontro la tarea especificada: " + nombreTarea)
+            return -2
+        
+        if len(newRows) == 0:
+            print("Error: No hay datos validos en el dataset")
+            return -2
+        
+        # --- Crear dataset y escribir ---
+        headers = ["fecha", "tarea", "ocurrencia", "contador", "elementos"]
+        dsNew = ds.toDataSet(headers, newRows)
+        
+        # FIX 3: Proteccion contra writeBlocking devolviendo lista vacia
+        try:
+            writeResult = system.tag.writeBlocking([rutaTag], [dsNew])
+            if writeResult and len(writeResult) > 0 and not writeResult[0].isGood():
+                print("Error: No se pudo escribir el dataset actualizado")
+                return -2
+        except Exception as we:
+            print("Error al escribir dataset: " + str(we))
+            return -2
+        
+        print("Dataset actualizado correctamente. Resultado: " + str(resultado))
+        return resultado
+        
+    except Exception as e:
+        print("Error general en completarTarea: " + str(e))
+        return -2
+
+# ...existing code...
