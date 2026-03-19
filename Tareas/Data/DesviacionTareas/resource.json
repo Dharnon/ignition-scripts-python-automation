@@ -1,0 +1,17 @@
+{
+  "scope": "A",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "code.py"
+  ],
+  "attributes": {
+    "lastModification": {
+      "actor": "ZD72N1T",
+      "timestamp": "2026-02-03T10:15:00Z"
+    },
+    "hintScope": 2,
+    "lastModificationSignature": "ce250cfcfb1d356a55f90fdc6f2d3195b2620738699abef37416cfa000aad2d0"
+  }
+}
