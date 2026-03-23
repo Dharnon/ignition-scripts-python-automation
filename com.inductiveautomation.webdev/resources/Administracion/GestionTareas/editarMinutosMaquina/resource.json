@@ -1,0 +1,24 @@
+{
+  "scope": "G",
+  "version": 1,
+  "restricted": false,
+  "overridable": true,
+  "files": [
+    "doTrace.py",
+    "doPut.py",
+    "config.json",
+    "doHead.py",
+    "doPatch.py",
+    "doPost.py",
+    "doOptions.py",
+    "doGet.py",
+    "doDelete.py"
+  ],
+  "attributes": {
+    "lastModification": {
+      "actor": "HEXA",
+      "timestamp": "2025-10-20T11:32:02Z"
+    },
+    "lastModificationSignature": "425c1d4844fb1d71037bd151a1d2f15a1ba134530b988ee46534464a14237447"
+  }
+}
