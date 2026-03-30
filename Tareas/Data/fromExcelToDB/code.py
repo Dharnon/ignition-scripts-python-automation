@@ -7,7 +7,7 @@ def excelToDataSet(fileBytes, hasHeaders, sheetNum, firstRow, lastRow, firstCol,
     import org.apache.poi.ss.usermodel.DateUtil as DateUtil
     from java.io import ByteArrayInputStream
     from java.util import Date
-    
+
     try:
         system.util.getLogger("CargarEstandar").info("Bytes recibidos para excel: len= " + str(len(fileBytes)))
         fileStream = ByteArrayInputStream(fileBytes)
@@ -329,6 +329,13 @@ def excelToDb(filepath, page):
 	print "Referencia: " + str(dataC1)
 	referencia = str(dataC1)
 	celula = str(dataC2)
+
+    # Guardamos la referencia en el tag de constantes de la célula
+    try:
+        tagPathRef = tp + 'Celula' + str(celula) + '/Maq_1/Datos_Cuasiconstantes/Referencia'
+        system.tag.writeBlocking([tagPathRef], [referencia])
+    except Exception as e:
+        print "Error escribiendo Referencia en tag de célula: " + str(e)
 	
 	#tagPath = tp + 'Celula' + str(dataC2) + '/Maq_1/Datos_Cuasiconstantes/Referencia'
 	#system.tag.writeBlocking([tagPath], [referencia])
@@ -515,11 +522,25 @@ def obtenerMinutoMC(celula, referencia):
 			logger.error("No se encontró fila MC para celula=%s referencia=%s" % (celula, referencia))
 			raise ValueError("Sin fila MC en _Secuencia para celula=%s referencia=%s" % (celula, referencia))
 
-		if len(data) > 1:
-			logger.error("Más de una fila MC para celula=%s referencia=%s" % (celula, referencia))
-			raise ValueError("MC ambiguo en _Secuencia para celula=%s referencia=%s" % (celula, referencia))
+		valores_mc = []
+		for fila in data:
+			try:
+				if fila[0] is not None:
+					valores_mc.append(float(fila[0]))
+			except:
+				continue
 
-		mc_min = data[0][0]
+		if len(valores_mc) == 0:
+			logger.error("Las filas MC no contienen min_std válido para celula=%s referencia=%s" % (celula, referencia))
+			raise ValueError("MC sin min_std válido en _Secuencia para celula=%s referencia=%s" % (celula, referencia))
+
+		if len(valores_mc) > 1:
+			logger.warn(
+				"Hay varias filas MC para celula=%s referencia=%s. Se usará el mayor min_std: %s" %
+				(celula, referencia, str(max(valores_mc)))
+			)
+
+		mc_min = max(valores_mc)
 		logger.info("MC resuelto para celula=%s referencia=%s -> min_std=%s" % (celula, referencia, str(mc_min)))
 		return float(mc_min)
 
@@ -544,11 +565,60 @@ def tareasTable(celula, referencia):
 	tablaSecCompl = "[" + database + "].[dbo].[" + tablaSecuencia + "]"
 	#------------------------------------------------------------------
 	
+	# DEBUG: Log what will be inserted before deleting
+	system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] === DEBUG INICIO ===")
+	system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] celula={}, referencia={}".format(celula, referencia))
+	
+	#---Ver que datos hay en Secuencia para esta celula/referencia antes de borrar
+	debug_query = """
+    SELECT
+        referencia,
+        descripcion,
+        maquina,
+        ocurrencia,
+        elemento,
+        prioridad,
+        celula,
+        min_std
+    FROM 
+        {tablaSecCompl}
+    WHERE
+        referencia = ?
+        AND celula = ?
+    ORDER BY maquina, num
+	""".format(tablaSecCompl=tablaSecuencia)
+	
+	try:
+	    debug_data = system.db.runPrepQuery(debug_query, [referencia, celula], database)
+	    system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] Datos en Secuencia para esta celula/referencia: {} filas".format(debug_data.rowCount))
+	    
+	    binPickingSecuencia = []
+	    for i in range(debug_data.rowCount):
+	        maquina_val = debug_data.getValueAt(i, 'maquina')
+	        descripcion_val = debug_data.getValueAt(i, 'descripcion')
+	        ocurrencia_val = debug_data.getValueAt(i, 'ocurrencia')
+	        is_bin_picking = 'BIN' in str(maquina_val).upper() or 'PICK' in str(maquina_val).upper() or 'PICK' in str(descripcion_val).upper()
+	        if is_bin_picking:
+	            binPickingSecuencia.append({
+	                'maquina': maquina_val, 'descripcion': descripcion_val, 
+	                'ocurrencia': ocurrencia_val, 'elemento': debug_data.getValueAt(i, 'elemento')
+	            })
+	        system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] SECUENCIA: maquina={}, descripcion={}, ocurrencia={}, min_std={}, is_bin_picking={}".format(
+	            maquina_val, descripcion_val, ocurrencia_val, debug_data.getValueAt(i, 'min_std'), is_bin_picking))
+	    
+	    system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] BIN PICKING en Secuencia: {} filas".format(len(binPickingSecuencia)))
+	    for item in binPickingSecuencia:
+	        system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] BIN PICKING SEC: maquina={}, descripcion={}, ocurrencia={}".format(
+	            item['maquina'], item['descripcion'], item['ocurrencia']))
+	except Exception as e:
+	    system.util.getLogger("G_PILOT_DEBUG").error("[tareasTable] Error consultando Secuencia: {}".format(str(e)))
+	
 	#---Borrar tabla
 	Tareas.Data.fromExcelToDB.deleteTable(tablaTareas, referencia, celula)
 
 	#---Resolver MC para esta celula/referencia-----------------------
 	mc_min = Tareas.Data.fromExcelToDB.obtenerMinutoMC(celula, referencia)
+	system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] MC minutos: {}".format(mc_min))
 
 	#---Insertar tabla con minutos normalizados a MC------------------
 	query = """
@@ -557,32 +627,33 @@ def tareasTable(celula, referencia):
 	    tarea,
 	    maquina,
 	    ocurrenciaStd,
-	    ocurrencia,
-	    turno,
-	    elemento,
-	    prioridad,
-	    celula,
-	    min_std,
-	    min
-	)
-	SELECT
-	    referencia,
-	    CONCAT(descripcion, ' 1/', CAST(CAST(1.0 / ocurrencia AS INT) AS VARCHAR)) AS tarea,
-	    maquina,
-	    CAST(1.0 / ocurrencia AS INT) AS ocurrenciaStd,
-	    NULL AS ocurrencia,
-	    NULL AS turno,
-	    elemento,
-	    prioridad,
-	    celula,
-	    min_std,
-	    ? AS min
-	FROM 
-	    {tablaSecCompl}
-	WHERE
-	    ocurrencia > 0
-	    AND referencia = ?
-	    AND celula = ?
+        ocurrencia,
+        turno,
+        elemento,
+        prioridad,
+        celula,
+        min_std,
+        min
+    )
+    SELECT
+        referencia,
+        CONCAT(descripcion, ' 1/', CAST(CAST(1.0 / ocurrencia AS INT) AS VARCHAR)) AS tarea,
+        maquina,
+        CAST(1.0 / ocurrencia AS INT) AS ocurrenciaStd,
+        NULL AS ocurrencia,
+        NULL AS turno,
+        elemento,
+        prioridad,
+        celula,
+        min_std,
+        ? AS min
+    FROM 
+        {tablaSecCompl}
+    WHERE
+        ocurrencia > 0
+        AND referencia = ?
+        AND celula = ?
+        AND maquina <> 'VARIOS'
 	""".format(
 	    tablaTareas=tablaTareas,
 	    tablaSecCompl=tablaSecuencia
@@ -591,62 +662,94 @@ def tareasTable(celula, referencia):
 	# Ejecutar el query
 	try:
 	    # Orden de parámetros: MC, referencia, celula
-	    system.db.runPrepUpdate(query, [mc_min, referencia, celula], database)
+	    filas_insertadas = system.db.runPrepUpdate(query, [mc_min, referencia, celula], database)
+	    system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] Filas insertadas en Tareas: {}".format(filas_insertadas))
 	except Exception as e:
 	    system.gui.errorBox("Error al insertar los datos: " + str(e))
+	    system.util.getLogger("G_PILOT_DEBUG").error("[tareasTable] Error insertando: {}".format(str(e)))
 	
+	system.util.getLogger("G_PILOT_DEBUG").info("[tareasTable] === DEBUG FIN ===")
 	return True
 	
 def insertarTareasEnTablaResumen(celula, referencia):
-	# Tareas.Data.fromExcelToDB.insertarTareasEnTablaResumen(celula, referencia)
-	"""
-	Obtener la información general para la vista de tareas
-	"""
-	#---PARAMETROS----------------------------------------------
-	# Obtener los datos desde la función existente
-	dataset = Tareas.Data.Teorico.obtenerTareas(celula, referencia)
+    # Tareas.Data.fromExcelToDB.insertarTareasEnTablaResumen(celula, referencia)
+    """
+    Obtener la informacion general para la vista de tareas
+    """
+    # Entrada explicita para confirmar que la funcion se invoca por celula/referencia.
+    system.util.getLogger("G_PILOT_DEBUG").info("[insertarTareasEnTablaResumen] === ENTRY === celula={}, referencia={}".format(celula, referencia))
+    #---PARAMETROS----------------------------------------------
+    # Obtener los datos desde la funcion existente
+    dataset = Tareas.Data.Teorico.obtenerTareas(celula, referencia)
 
-	# Nombre de la tabla de destino
-	tablaTareasResumen = constantes.LINEA + "_Tareas_Resumen"
-	
-	# Nombre de la base de datos
-	database = constantes.Database_Tareas
-	
-	#---Borrar tabla
-	#Tareas.Data.fromExcelToDB.deleteTable(tablaTareasResumen, referencia, celula)
-	#---Poner los ids de la tabla como inactivo
-	Tareas.Data.fromExcelToDB.inactivoTable(tablaTareasResumen, referencia, celula)
-	#-------------------------------------------------------------
+    system.util.getLogger("G_PILOT_DEBUG").info("[insertarTareasEnTablaResumen] Dataset recibido: {} filas".format(dataset.rowCount if dataset else 0))
+    if dataset and dataset.rowCount > 0:
+        for i in range(dataset.rowCount):
+            system.util.getLogger("G_PILOT_DEBUG").info("[insertarTareasEnTablaResumen] Fila {}: tarea={}, maquina={}, elementos={}".format(
+                i, dataset.getValueAt(i, "tarea"), dataset.getValueAt(i, "maquina"), dataset.getValueAt(i, "elementos")))
+    else:
+        system.util.getLogger("G_PILOT_DEBUG").warning("[insertarTareasEnTablaResumen] Dataset vacio para celula={}, referencia={}".format(celula, referencia))
 
-	# Preparar la query de inserción
-	insert_query = """
-	INSERT INTO {tabla} (
-		referencia,
-		tarea,
-		maquina,
-		ocurrencia,
-		elementos,
-		celula,
-		activo
-	)
-	VALUES (?, ?, ?, ?, ?, ?, ?)
-	""".format(tabla=tablaTareasResumen)
+    # Nombre de la tabla de destino
+    tablaTareasResumen = constantes.LINEA + "_Tareas_Resumen"
 
-	# Recorrer el dataset e insertar cada fila
-	for i in range(dataset.rowCount):
-		params = [
-			dataset.getValueAt(i, "referencia"),
-			dataset.getValueAt(i, "tarea"),
-			dataset.getValueAt(i, "maquina"),
-			dataset.getValueAt(i, "ocurrencia"),
-			dataset.getValueAt(i, "elementos"),
-			dataset.getValueAt(i, "celula"),
-			1
-		]
+    # Nombre de la base de datos
+    database = constantes.Database_Tareas
 
-		system.db.runPrepUpdate(insert_query, params, database)
+    #---Borrar tabla
+    #Tareas.Data.fromExcelToDB.deleteTable(tablaTareasResumen, referencia, celula)
+    #---Poner los ids de la tabla como inactivo
+    Tareas.Data.fromExcelToDB.inactivoTable(tablaTareasResumen, referencia, celula)
+    #-------------------------------------------------------------
 
-	print "Inserción completada: {} filas insertadas en '{}'.".format(dataset.rowCount, tablaTareasResumen)
+    # Preparar la query de insercion
+    insert_query = """
+    INSERT INTO {tabla} (
+        referencia,
+        tarea,
+        maquina,
+        ocurrencia,
+        elementos,
+        celula,
+        activo
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """.format(tabla=tablaTareasResumen)
+
+    # Recorrer el dataset e insertar cada fila
+    system.util.getLogger("G_PILOT_DEBUG").info("[insertarTareasEnTablaResumen] Iniciando insercion de {} filas".format(dataset.rowCount))
+    for i in range(dataset.rowCount):
+        params = [
+            dataset.getValueAt(i, "referencia"),
+            dataset.getValueAt(i, "tarea"),
+            dataset.getValueAt(i, "maquina"),
+            dataset.getValueAt(i, "ocurrencia"),
+            dataset.getValueAt(i, "elementos"),
+            dataset.getValueAt(i, "celula"),
+            1
+        ]
+
+        system.util.getLogger("G_PILOT_DEBUG").info("[insertarTareasEnTablaResumen] Insertando fila {}: {}".format(i, params))
+
+        try:
+            result = system.db.runPrepUpdate(insert_query, params, database)
+        except Exception as e:
+            system.util.getLogger("G_PILOT_DEBUG").error("[insertarTareasEnTablaResumen] ERROR insertando fila {}: {}".format(i, str(e)))
+            system.util.getLogger("G_PILOT_DEBUG").error("[insertarTareasEnTablaResumen] Params: tarea={}, maquina={}, elementos={}".format(
+                dataset.getValueAt(i, "tarea"), dataset.getValueAt(i, "maquina"), dataset.getValueAt(i, "elementos")))
+
+    system.util.getLogger("G_PILOT_DEBUG").info("[insertarTareasEnTablaResumen] ===== BUCLE COMPLETADO =====")
+
+    print "Insercion completada: {} filas insertadas en '{}'".format(dataset.rowCount, tablaTareasResumen)
+
+    # Verificar insercion
+    system.util.getLogger("G_PILOT_DEBUG").info("[insertarTareasEnTablaResumen] Ejecutando verificacion para celula={}, referencia={}".format(celula, referencia))
+    verify_query = "SELECT COUNT(*) as total, COUNT(CASE WHEN activo = 1 THEN 1 END) as activos FROM {tabla} WHERE celula = ? AND referencia = ?".format(tabla=tablaTareasResumen)
+    verify_data = system.db.runPrepQuery(verify_query, [celula, referencia], database)
+    system.util.getLogger("G_PILOT_DEBUG").info("[insertarTareasEnTablaResumen] Verificacion query result: total={}, activos={}".format(
+        verify_data[0]['total'], verify_data[0]['activos'] if verify_data[0]['activos'] else 0))
+    if verify_data[0]['total'] == 0:
+        system.util.getLogger("G_PILOT_DEBUG").warning("[insertarTareasEnTablaResumen] ADVERTENCIA: No se encontraron filas para celula={}, referencia={} DESPUES de la insercion!".format(celula, referencia))
 	
 
 import system.db
@@ -698,6 +801,16 @@ def excelToDb_fb(fileBytes, page):
     
     print "Procesando Celula: %s, Referencia: %s" % (dataC2, dataC1)
 
+    # Intentamos dejar la referencia accesible para el resto del flujo.
+    # Ojo: si el tag es OPC y está desconectado, esta escritura no persistirá,
+    # por eso el flujo de lectura también tiene fallback a base de datos.
+    try:
+        tagPathRef = tp + 'Celula' + str(dataC2) + '/Maq_1/Datos_Cuasiconstantes/Referencia'
+        result = system.tag.writeBlocking([tagPathRef], [str(dataC1)])
+        print "Escritura de referencia en tag {} -> {}".format(tagPathRef, str(result[0].quality))
+    except Exception as e:
+        print "Error escribiendo Referencia en tag de célula: " + str(e)
+
     # 3. Limpieza previa
     # Borrar los datos existentes
     Tareas.Data.fromExcelToDB.deleteTable(tablaSecuencia, dataC1, dataC2)
@@ -719,6 +832,8 @@ def excelToDb_fb(fileBytes, page):
         for row in range(filas):
             # Solo insertamos si la columna 'maquina' (indice 0) tiene datos
             if dataSet.data[0][row] is not None:
+                if str(dataSet.data[0][row]).strip().upper() == "VARIOS":
+                    continue
                 parameters = [
                     dataC1,                         # referencia
                     dataSet.data[0][row],           # maquina

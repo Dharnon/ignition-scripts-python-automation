@@ -10,8 +10,25 @@ def obtenerReferencia(celula):
 		
 		datos = system.tag.readBlocking(path)
 		referencia = datos[0].value
-		referencia = referencia.strip()
-		return referencia
+		if referencia is not None:
+			referencia = str(referencia).strip()
+			if referencia != "" and referencia.upper() != "NULL":
+				return referencia
+
+		# Fallback a base de datos cuando el tag no está disponible o no tiene valor.
+		database = constantes.Database_Tareas
+		tablaResumen = constantes.LINEA + "_Tareas_Resumen"
+		query = """
+			SELECT TOP 1 referencia
+			FROM {tabla}
+			WHERE celula = ?
+			  AND activo = 1
+		""".format(tabla=tablaResumen)
+		data = system.db.runPrepQuery(query, [str(celula)], database)
+		if data and len(data) > 0 and data[0][0] is not None:
+			return str(data[0][0]).strip()
+
+		return 'NULL'
 		
 	except Exception as e:
 		system.util.getLogger("ScriptError").error("obtenerReferencia: {}".format(str(e)))
@@ -288,10 +305,10 @@ def obtenerTipoMaquina(celula, num):
 			data = system.tag.readBlocking(path)
 			tipo = data[0].value
 			
-			tipoMaq = tipo.upper()
+			tipoMaq = str(tipo).strip().upper()
 			return tipoMaq
 		else:
-			tipoMaq = tipo.upper()
+			tipoMaq = str(tipo).strip().upper()
 			if tipoMaq == "CELULA_AUTOMATICA":
 				tipoMaq = "CELULA"
 			
@@ -300,10 +317,9 @@ def obtenerTipoMaquina(celula, num):
 			
 			# Comprobamos si es Bin Picking por la situacion
 			sit = system.tag.readBlocking(path)
-			situacion = sit[0].value
-			pick = situacion[-5:-1]
+			situacion = str(sit[0].value).strip()
 			
-			if tipoMaq == "CELULA" and pick == "Pick":
+			if tipoMaq == "CELULA" and situacion.upper().endswith("PICK"):
 				tipoMaq = "BIN PICKING"
 			
 			return tipoMaq

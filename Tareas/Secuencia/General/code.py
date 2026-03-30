@@ -6,6 +6,7 @@ def cargarEstandar(filepath, pages):
 	ruta = "\R120638-R120636-R120631-R120631.xlsx"
 	"""
 	try:
+        logger = system.util.getLogger("G_PILOT_DEBUG")
 		#filepath = constantes.pathExcel + str(ruta)
 		#filepath = str(ruta)
 		#print filepath
@@ -15,11 +16,19 @@ def cargarEstandar(filepath, pages):
 			datos = Tareas.Data.fromExcelToDB.excelToDb_fb(filepath, page) # Actualizamos en la tabla Secuencia
 			celula = datos[0]
 			referencia = datos[1]
+            logger.info("[cargarEstandar] PAGE {} START celula={}, referencia={}".format(page, celula, referencia))
 			#---Actualizamos ocurrencia de Bandeja descarga
 			Tareas.Data.Teorico.accionesCambioBandejaDescarga(referencia)
 			#---Transformamos los datos del excel a datos a la tabla de tareas final
+            logger.info("[cargarEstandar] PAGE {} BEFORE tareasTable celula={}, referencia={}".format(page, celula, referencia))
 			Tareas.Data.fromExcelToDB.tareasTable(celula, referencia)
+            logger.info("[cargarEstandar] PAGE {} AFTER tareasTable celula={}, referencia={}".format(page, celula, referencia))
+            logger.info("[cargarEstandar] PAGE {} BEFORE resumen celula={}, referencia={}".format(page, celula, referencia))
 			Tareas.Data.fromExcelToDB.insertarTareasEnTablaResumen(celula, referencia)
+            logger.info("[cargarEstandar] PAGE {} AFTER resumen celula={}, referencia={}".format(page, celula, referencia))
+            #---Refrescamos el tag visual para esa célula---------------------
+            iniciarEstandar(celula, referencia)
+            logger.info("[cargarEstandar] PAGE {} END celula={}, referencia={}".format(page, celula, referencia))
 			
 		return True
     
@@ -73,8 +82,8 @@ def iniciarEstandar_v0(celula):
     #    return False
  
 
-def iniciarEstandar(celula):
-    # Tareas.Secuencia.General.iniciarEstandar(celula)
+def iniciarEstandar(celula, referencia=None):
+    # Tareas.Secuencia.General.iniciarEstandar(celula, referencia=None)
     """
     Reinicia el estándar en el dataset del tag:
     - Borra lo que haya de la célula indicada.
@@ -87,7 +96,8 @@ def iniciarEstandar(celula):
         #---PARAMETROS-------------------------
         tp = constantes.tag_provider
         celulaLinea = constantes.celulaLinea
-        referencia = Sinoptico.Data.General.obtenerReferencia(celula)
+        if referencia is None or str(referencia).strip() == "" or str(referencia).upper() == "NULL":
+            referencia = Sinoptico.Data.General.obtenerReferencia(celula)
 
         #---Obtenemos los tiempos que tarda cada maquina
         datasetMinutos = Tareas.Data.Teorico.obtenerTiemposMaquina(celula, referencia)

@@ -125,11 +125,11 @@ def obtenerTiemposMaquina_crearTareas(celula, referencia):
     # Si tienes un dataset llamado 'data'
     result = []
     for row in range(dataset.rowCount):
-	    rowDict = {}
-	    for col in range(dataset.columnCount):
-	        colName = dataset.getColumnName(col)
-	        rowDict[colName] = dataset.getValueAt(row, col)
-	    result.append(rowDict)
+        rowDict = {}
+        for col in range(dataset.columnCount):
+            colName = dataset.getColumnName(col)
+            rowDict[colName] = dataset.getValueAt(row, col)
+        result.append(rowDict)
 
     #return dataset
     return result
@@ -281,137 +281,255 @@ def obtenerTareas(celula, referencia):
     dataset = system.db.runPrepQuery(query, params, database) if params else system.db.runQuery(query, database)
 
     print("Filas obtenidas:", dataset.rowCount)
+    
+    # DEBUG: Log each row to identify BIN PICKING tasks
+    system.util.getLogger("G_PILOT_DEBUG").info("[obtenerTareas] === DEBUG INICIO ===")
+    system.util.getLogger("G_PILOT_DEBUG").info("[obtenerTareas] Filtro: celula={}, referencia={}".format(celula, referencia))
+    system.util.getLogger("G_PILOT_DEBUG").info("[obtenerTareas] Total filas: {}".format(dataset.rowCount))
+    
+    binPickingCount = 0
     for row in range(dataset.getRowCount()):
-        print(dataset.getValueAt(row, "referencia"), dataset.getValueAt(row, "tarea"),
-              dataset.getValueAt(row, "elementos"), dataset.getValueAt(row, "maquina"),
-              dataset.getValueAt(row, "ocurrencia"))
+        tarea_val = dataset.getValueAt(row, "tarea")
+        maquina_val = dataset.getValueAt(row, "maquina")
+        celula_val = dataset.getValueAt(row, "celula")
+        elementos_val = dataset.getValueAt(row, "elementos")
+        ocurrencia_val = dataset.getValueAt(row, "ocurrencia")
+        
+        # Check if it's BIN PICKING related
+        is_bin_picking = 'BIN' in str(maquina_val).upper() or 'PICK' in str(maquina_val).upper() or 'PICK' in str(tarea_val).upper()
+        if is_bin_picking:
+            binPickingCount += 1
+            system.util.getLogger("G_PILOT_DEBUG").info("[obtenerTareas] BIN PICKING ROW #{}: tarea={}, maquina={}, celula={}, elementos={}, ocurrencia={}".format(
+                row, tarea_val, maquina_val, celula_val, elementos_val, ocurrencia_val))
+        
+        print(dataset.getValueAt(row, "referencia"), tarea_val,
+              elementos_val, maquina_val, ocurrencia_val)
+    
+    system.util.getLogger("G_PILOT_DEBUG").info("[obtenerTareas] Total filas BIN PICKING relacionadas: {}".format(binPickingCount))
+    system.util.getLogger("G_PILOT_DEBUG").info("[obtenerTareas] === DEBUG FIN ===")
 
     return dataset
 	
 	
 def generarDatasetTiempos_v0(datasetMinutos, datasetTareas):
-	# Tareas.Data.Teorico.generarDatasetTiempos(datasetMinutos, datasetTareas)
-	"""
-	Devuelve un Dataset de Ignition con:
-	['tarea', 'cuando', 'celula', 'maquina', 'elemento', 'completado']
-	Al comparar 'celula' y 'maquina' de dos datasets, y multiplicar minutos × ocurrencia.
-	"""
-	from system.dataset import toDataSet
-	import system.date
+    # Tareas.Data.Teorico.generarDatasetTiempos(datasetMinutos, datasetTareas)
+    """
+    Devuelve un Dataset de Ignition con:
+    ['tarea', 'cuando', 'celula', 'maquina', 'elemento', 'completado']
+    Al comparar 'celula' y 'maquina' de dos datasets, y multiplicar minutos × ocurrencia.
+    """
+    from system.dataset import toDataSet
+    import system.date
 
-	# Columnas finales
-	columnas = ["tarea", "cuando", "celula", "maquina", "elemento", "completado"]
-	resultados = []
+    def _norm(value):
+        if value is None:
+            return ""
+        return str(value).strip().upper()
 
-	# Convertimos datasetMinutos a lista de dicts
-	minutos_lista = []
-	for i in range(datasetMinutos.rowCount):
-		minutos_lista.append({
-			'maquina': datasetMinutos.getValueAt(i, 'maquina'),
-			'celula': datasetMinutos.getValueAt(i, 'celula'),
-			'minutos': datasetMinutos.getValueAt(i, 'minutos'),
-			'elemento': datasetMinutos.getValueAt(i, 'elemento')
-		})
+    # Columnas finales
+    columnas = ["tarea", "cuando", "celula", "maquina", "elemento", "completado"]
+    resultados = []
 
-	# Hora actual como punto de inicio
-	base_time = system.date.now()
+    # Convertimos datasetMinutos a lista de dicts
+    minutos_lista = []
+    for i in range(datasetMinutos.rowCount):
+        minutos_lista.append({
+            'maquina': datasetMinutos.getValueAt(i, 'maquina'),
+            'celula': datasetMinutos.getValueAt(i, 'celula'),
+            'minutos': datasetMinutos.getValueAt(i, 'minutos'),
+            'elemento': datasetMinutos.getValueAt(i, 'elemento'),
+            'maquina_norm': _norm(datasetMinutos.getValueAt(i, 'maquina')),
+            'celula_norm': _norm(datasetMinutos.getValueAt(i, 'celula'))
+        })
 
-	# Recorremos datasetTareas
-	for i in range(datasetTareas.rowCount):
-		tarea = datasetTareas.getValueAt(i, 'tarea')
-		maquina = datasetTareas.getValueAt(i, 'maquina')
-		celula = datasetTareas.getValueAt(i, 'celula')
-		ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia') or 0
-		elemento = datasetTareas.getValueAt(i, 'elementos')
-		completado = 0
+    # Hora actual como punto de inicio
+    base_time = system.date.now()
 
-		# Validar que ocurrencia sea positiva
-		if ocurrencia <= 0:
-			continue
+    # Recorremos datasetTareas
+    for i in range(datasetTareas.rowCount):
+        tarea = datasetTareas.getValueAt(i, 'tarea')
+        maquina = datasetTareas.getValueAt(i, 'maquina')
+        celula = datasetTareas.getValueAt(i, 'celula')
+        ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia')
+        if ocurrencia is None or ocurrencia == '':
+            ocurrencia = datasetTareas.getValueAt(i, 'ocurrenciaStd')
+        if ocurrencia is None or ocurrencia == '':
+            ocurrencia = 0
+        elemento = datasetTareas.getValueAt(i, 'elementos')
+        completado = 0
 
-		# Buscar la primera coincidencia válida en datasetMinutos
-		for row in minutos_lista:
-			if row['celula'] == celula and row['maquina'] == maquina:
-				# Repetir tarea cada 'ocurrencia' minutos durante 12 horas
-				minutos = row['minutos'] or 0
-				newocurrencia = minutos * ocurrencia
-				total_minutos = 8 * 60
-				num_repeticiones = total_minutos // newocurrencia
-				print "Tarea: {}, Ocurrencia: {}, Célula: {}, Máquina: {}".format(
-						tarea, newocurrencia, celula, maquina
-					)
+        # Validar que ocurrencia sea positiva
+        if ocurrencia <= 0:
+            continue
 
-				for j in range(int(num_repeticiones)):
-					cuando = system.date.addMinutes(base_time, (j+1) * int(newocurrencia))
-					resultados.append([tarea, cuando, celula, maquina, elemento, completado])
-				break  # Solo usar primera coincidencia
+        matched = False
+        # Buscar la primera coincidencia válida en datasetMinutos
+        for row in minutos_lista:
+            if row['celula_norm'] == _norm(celula) and row['maquina_norm'] == _norm(maquina):
+                # Repetir tarea cada 'ocurrencia' minutos durante 12 horas
+                minutos = row['minutos'] or 0
+                newocurrencia = minutos * ocurrencia
+                if newocurrencia <= 0:
+                    print("SKIP ocurrencia <= 0 -> tarea={}, celula={}, maquina={}, minutos={}, ocurrencia={}".format(tarea, celula, maquina, minutos, ocurrencia))
+                    continue
+                total_minutos = 8 * 60
+                num_repeticiones = total_minutos // newocurrencia
+                print("Tarea: {}, Ocurrencia: {}, Célula: {}, Máquina: {}".format(tarea, newocurrencia, celula, maquina))
+                matched = True
 
-	# Crear y devolver dataset
-	return toDataSet(columnas, resultados)
+                for j in range(int(num_repeticiones)):
+                    cuando = system.date.addMinutes(base_time, (j+1) * int(newocurrencia))
+                    resultados.append([tarea, cuando, celula, maquina, elemento, completado])
+                break  # Solo usar primera coincidencia
+
+        if not matched:
+            print("SKIP sin match en datasetMinutos -> tarea={}, celula={}, maquina={}".format(tarea, celula, maquina))
+
+    # Crear y devolver dataset
+    return toDataSet(columnas, resultados)
 	
 def generarDatasetTiempos(datasetMinutos, datasetTareas):
-	# Tareas.Data.Teorico.generarDatasetTiempos(datasetMinutos, datasetTareas)
-	"""
-	Devuelve un Dataset de Ignition con:
-	['tarea', 'cuando', 'celula', 'maquina', 'elemento', 'completado']
-	Al comparar 'celula' y 'maquina' de dos datasets, y multiplicar minutos × ocurrencia.
-	"""
-	from system.dataset import toDataSet
-	import system.date
+    # Tareas.Data.Teorico.generarDatasetTiempos(datasetMinutos, datasetTareas)
+    """
+    Devuelve un Dataset de Ignition con:
+    ['tarea', 'cuando', 'celula', 'maquina', 'elemento', 'completado']
+    Al comparar 'celula' y 'maquina' de dos datasets, y multiplicar minutos × ocurrencia.
+    """
+    from system.dataset import toDataSet
+    import system.date
 
-	# Columnas finales
-	columnas = ["tarea", "cuando", "celula", "maquina", "elemento", "completado"]
-	resultados = []
+    def _norm(value):
+        if value is None:
+            return ""
+        return str(value).strip().upper()
 
-	# Convertimos datasetMinutos a lista de dicts
-	minutos_lista = []
-	for i in range(datasetMinutos.rowCount):
-		minutos_lista.append({
-			'maquina': datasetMinutos.getValueAt(i, 'maquina'),
-			'celula': datasetMinutos.getValueAt(i, 'celula'),
-			'minutos': datasetMinutos.getValueAt(i, 'minutos'),
-			'elemento': datasetMinutos.getValueAt(i, 'elemento')
-		})
+    # DEBUG: Log input datasets
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] === DEBUG INICIO ===")
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] datasetMinutos rows: {}, datasetTareas rows: {}".format(
+        datasetMinutos.rowCount if datasetMinutos else 0, 
+        datasetTareas.rowCount if datasetTareas else 0))
+    
+    # Log all machine times for BIN PICKING investigation
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] === datasetMinutos (Tiempos Maquina) ===")
+    for i in range(datasetMinutos.rowCount):
+        maquina_val = datasetMinutos.getValueAt(i, 'maquina')
+        celula_val = datasetMinutos.getValueAt(i, 'celula')
+        minutos_val = datasetMinutos.getValueAt(i, 'minutos')
+        elemento_val = datasetMinutos.getValueAt(i, 'elemento')
+        is_bin_picking = 'BIN' in str(maquina_val).upper() or 'PICK' in str(maquina_val).upper()
+        system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] MINUTOS: maquina={}, celula={}, minutos={}, elemento={}, is_bin_picking={}".format(
+            maquina_val, celula_val, minutos_val, elemento_val, is_bin_picking))
+    
+    # Log all tasks for BIN PICKING investigation  
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] === datasetTareas (Tareas) ===")
+    binPickingTareas = []
+    for i in range(datasetTareas.rowCount):
+        tarea_val = datasetTareas.getValueAt(i, 'tarea')
+        maquina_val = datasetTareas.getValueAt(i, 'maquina')
+        celula_val = datasetTareas.getValueAt(i, 'celula')
+        elementos_val = datasetTareas.getValueAt(i, 'elementos')
+        is_bin_picking = 'BIN' in str(maquina_val).upper() or 'PICK' in str(maquina_val).upper() or 'PICK' in str(tarea_val).upper()
+        if is_bin_picking:
+            binPickingTareas.append({
+                'tarea': tarea_val, 'maquina': maquina_val, 'celula': celula_val,
+                'elementos': elementos_val, 'norm_celula': _norm(celula_val), 'norm_maquina': _norm(maquina_val)
+            })
+        system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] TAREA: tarea={}, maquina={}, celula={}, elementos={}, is_bin_picking={}".format(
+            tarea_val, maquina_val, celula_val, elementos_val, is_bin_picking))
+    
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] Total BIN PICKING tareas: {}".format(len(binPickingTareas)))
 
-	# Hora actual como punto de inicio
-	base_time = system.date.now()
+    # Columnas finales
+    columnas = ["tarea", "cuando", "celula", "maquina", "elemento", "completado"]
+    resultados = []
 
-	# Recorremos datasetTareas
-	for i in range(datasetTareas.rowCount):
-		tarea = datasetTareas.getValueAt(i, 'tarea')
-		maquina = datasetTareas.getValueAt(i, 'maquina')
-		celula = datasetTareas.getValueAt(i, 'celula')
-		ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia') or 0
-		elemento = datasetTareas.getValueAt(i, 'elementos')
-		completado = 0
+    # Convertimos datasetMinutos a lista de dicts
+    minutos_lista = []
+    for i in range(datasetMinutos.rowCount):
+        minutos_lista.append({
+            'maquina': datasetMinutos.getValueAt(i, 'maquina'),
+            'celula': datasetMinutos.getValueAt(i, 'celula'),
+            'minutos': datasetMinutos.getValueAt(i, 'minutos'),
+            'elemento': datasetMinutos.getValueAt(i, 'elemento'),
+            'maquina_norm': _norm(datasetMinutos.getValueAt(i, 'maquina')),
+            'celula_norm': _norm(datasetMinutos.getValueAt(i, 'celula'))
+        })
 
-		# Validar que ocurrencia sea positiva
-		if ocurrencia <= 0:
-			continue
-		# Buscar la primera coincidencia válida en datasetMinutos
-		for row in minutos_lista:
-		    if row['celula'] == celula and row['maquina'] == maquina:
-		        # Calcular intervalo
-		        minutos = row['minutos'] or 0
-		        newocurrencia = minutos * ocurrencia
-		        total_minutos = 8 * 60
-		        num_repeticiones = total_minutos // newocurrencia
-		        
-		        print "Tarea: {}, Ocurrencia: {}, Célula: {}, Máquina: {}".format(
-		            tarea, newocurrencia, celula, maquina
-		        )
-		        
-		        # SIEMPRE añadir la primera ocurrencia (sin importar si está fuera de 8 horas)
-		        primera_cuando = system.date.addMinutes(base_time, int(newocurrencia))
-		        resultados.append([tarea, primera_cuando, celula, maquina, elemento, completado])
-		        
-		        # Añadir el resto solo si están dentro del límite de 8 horas
-		        for j in range(1, int(num_repeticiones)):  # Empezar desde 1 (la primera ya está añadida)
-		            cuando = system.date.addMinutes(base_time, (j+1) * int(newocurrencia))
-		            resultados.append([tarea, cuando, celula, maquina, elemento, completado])
+    # Hora actual como punto de inicio
+    base_time = system.date.now()
 
-	# Crear y devolver dataset
-	return toDataSet(columnas, resultados)
+    # Recorremos datasetTareas
+    skipped_bin_picking = []
+    matched_bin_picking = []
+    for i in range(datasetTareas.rowCount):
+        tarea = datasetTareas.getValueAt(i, 'tarea')
+        maquina = datasetTareas.getValueAt(i, 'maquina')
+        celula = datasetTareas.getValueAt(i, 'celula')
+        ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia')
+        if ocurrencia is None or ocurrencia == '':
+            ocurrencia = datasetTareas.getValueAt(i, 'ocurrenciaStd')
+        if ocurrencia is None or ocurrencia == '':
+            ocurrencia = 0
+        elemento = datasetTareas.getValueAt(i, 'elementos')
+        completado = 0
+
+        # Validar que ocurrencia sea positiva
+        if ocurrencia <= 0:
+            continue
+        # Buscar la primera coincidencia válida en datasetMinutos
+        matched = False
+        for row in minutos_lista:
+            if row['celula_norm'] == _norm(celula) and row['maquina_norm'] == _norm(maquina):
+                # Calcular intervalo
+                minutos = row['minutos'] or 0
+                newocurrencia = minutos * ocurrencia
+                if newocurrencia <= 0:
+                    print("SKIP ocurrencia <= 0 -> tarea={}, celula={}, maquina={}, minutos={}, ocurrencia={}".format(tarea, celula, maquina, minutos, ocurrencia))
+                    continue
+                total_minutos = 8 * 60
+                num_repeticiones = total_minutos // newocurrencia
+
+                print("Tarea: {}, Ocurrencia: {}, Célula: {}, Máquina: {}".format(tarea, newocurrencia, celula, maquina))
+                matched = True
+                
+                # Track BIN PICKING matches
+                is_bin_picking = 'BIN' in str(maquina).upper() or 'PICK' in str(maquina).upper() or 'PICK' in str(tarea).upper()
+                if is_bin_picking:
+                    matched_bin_picking.append({'tarea': tarea, 'maquina': maquina, 'celula': celula, 'minutos': minutos, 'newocurrencia': newocurrencia})
+
+                # SIEMPRE añadir la primera ocurrencia (sin importar si está fuera de 8 horas)
+                primera_cuando = system.date.addMinutes(base_time, int(newocurrencia))
+                resultados.append([tarea, primera_cuando, celula, maquina, elemento, completado])
+
+                # Añadir el resto solo si están dentro del límite de 8 horas
+                for j in range(1, int(num_repeticiones)):  # Empezar desde 1 (la primera ya está añadida)
+                    cuando = system.date.addMinutes(base_time, (j+1) * int(newocurrencia))
+                    resultados.append([tarea, cuando, celula, maquina, elemento, completado])
+                break  # Only use first match
+
+        if not matched:
+            is_bin_picking = 'BIN' in str(maquina).upper() or 'PICK' in str(maquina).upper() or 'PICK' in str(tarea).upper()
+            if is_bin_picking:
+                skipped_bin_picking.append({'tarea': tarea, 'maquina': maquina, 'celula': celula})
+            print("SKIP sin match en datasetMinutos -> tarea={}, celula={}, maquina={}".format(tarea, celula, maquina))
+
+    # Final debug summary
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] === RESULTADO ===")
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] Total resultados generados: {}".format(len(resultados)))
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] BIN PICKING SKIPPED (no match): {}".format(len(skipped_bin_picking)))
+    for item in skipped_bin_picking:
+        system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] SKIPPED BIN PICKING: tarea={}, maquina={}, celula={}".format(
+            item['tarea'], item['maquina'], item['celula']))
+    
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] BIN PICKING MATCHED: {}".format(len(matched_bin_picking)))
+    for item in matched_bin_picking:
+        system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] MATCHED BIN PICKING: tarea={}, maquina={}, celula={}, minutos={}, newocurrencia={}".format(
+            item['tarea'], item['maquina'], item['celula'], item['minutos'], item['newocurrencia']))
+    
+    system.util.getLogger("G_PILOT_DEBUG").info("[generarDatasetTiempos] === DEBUG FIN ===")
+
+    # Crear y devolver dataset
+    return toDataSet(columnas, resultados)
 	
 def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
 	# Tareas.Data.Teorico.reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, None)
@@ -424,6 +542,11 @@ def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
     """
     from system.dataset import toDataSet
     import system.date
+
+    def _norm(value):
+        if value is None:
+            return ""
+        return str(value).strip().upper()
 
     tp = constantes.tag_provider
     celulaLinea = constantes.celulaLinea
@@ -490,8 +613,8 @@ def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
     min_dict = {}
     for i in range(datasetMinutos.rowCount):
         key = (
-            str(datasetMinutos.getValueAt(i, 'celula')),
-            str(datasetMinutos.getValueAt(i, 'maquina'))
+            _norm(datasetMinutos.getValueAt(i, 'celula')),
+            _norm(datasetMinutos.getValueAt(i, 'maquina'))
         )
         min_dict[key] = {
             'minutos': datasetMinutos.getValueAt(i, 'minutos'),
@@ -505,19 +628,27 @@ def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
         tarea = datasetTareas.getValueAt(i, 'tarea')
         celula = datasetTareas.getValueAt(i, 'celula')
         maquina = datasetTareas.getValueAt(i, 'maquina')
-        ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia') or 0
+        ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia')
+        if ocurrencia is None or ocurrencia == '':
+            ocurrencia = datasetTareas.getValueAt(i, 'ocurrenciaStd')
+        if ocurrencia is None or ocurrencia == '':
+            ocurrencia = 0
         elemento = datasetTareas.getValueAt(i, 'elementos')
         completado = 0
 
         if ocurrencia <= 0:
             continue
 
-        key = (celula, maquina)
+        key = (_norm(celula), _norm(maquina))
         if key not in min_dict:
+            print("SKIP sin match en reprogramarTareasDesdeHora -> tarea={}, celula={}, maquina={}".format(tarea, celula, maquina))
             continue
 
         duracion = min_dict[key]['minutos'] or 0
         new_ocurrencia = duracion * ocurrencia
+        if new_ocurrencia <= 0:
+            print("SKIP ocurrencia <= 0 en reprogramarTareasDesdeHora -> tarea={}, celula={}, maquina={}, minutos={}, ocurrencia={}".format(tarea, celula, maquina, duracion, ocurrencia))
+            continue
         clave_tarea = (str(tarea), str(celula), str(maquina))
 
         # --- Selección de punto de inicio
@@ -549,7 +680,7 @@ def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
     # Guardar dataset final
     finalDataset = toDataSet(colNames, nuevas_filas)
     system.tag.writeBlocking([path], [finalDataset])
-    print "Dataset actualizado con nuevas tareas teóricas desde", horaBase
+    print("Dataset actualizado con nuevas tareas teóricas desde", horaBase)
 
     return True
 
@@ -588,88 +719,88 @@ def marcarTareasComoCompletadasAntesDe(horaLimite):
     # Escribir el dataset actualizado
     nuevoDataset = system.dataset.toDataSet(colNames, nuevas_filas)
     system.tag.writeBlocking([path], [nuevoDataset])
-    print "Tareas actualizadas hasta:", horaLimite
+    print("Tareas actualizadas hasta:", horaLimite)
 
     return True
 
 def accionesCambioBandejaDescarga(referencia):
-	# Tareas.Data.Teorico.accionesCambioBandejaDescarga(referencia)
-	"""
-	Cambia la ocurrencia del cambio de bandeja cuando se inicializa un estandar
-	"""
-	#---PARAMETROS--------
-	databaseTareas = constantes.Database_Tareas
-	database = constantes.Database_Tareas_2
-	tablaTareas = constantes.LINEA + "_Secuencia"
-	tabla = "CGF_RACKS_DATA_MARTS"
-	
-	maquina = "CELULA"
-	elemento = "Cambio de carga bandejas PP"
-	#---------------------
-	try:
-	    #---Obtenemos valor RS_CANTIDAD--------------------------
-	    query = """
-	        SELECT TOP 1
-	            RS_CANTIDAD
-	        FROM {0}
-	        WHERE RS_CODIGO_REFERENCIA = ?
-	        AND RS_ETIQUETA_RACK_LOCAL LIKE 'GFV-%'
-	        ORDER BY RS_FECHA DESC
-	    """.format(tabla)
-	
-	    params = [str(referencia)]
-	    data = system.db.runPrepQuery(query, params, database)
-	
-	    if not data or len(data) == 0:
-	        print "No se encontraron datos en", tabla, "para referencia", referencia
-	        return False
-	
-	    valor = float(data[0][0])
-	    if valor == 0:
-	        print "RS_CANTIDAD = 0, no se puede dividir"
-	        return False
-	
-	    newOcurrencia = 1 / valor
-	    print "Valor:", valor
-	    print "Nuevo valor de ocurrencia:", newOcurrencia
-	
-	    #---Obtenemos ocurrencia actual--------------------------
-	    query = """
-	        SELECT ocurrencia
-	        FROM {0}
-	        WHERE maquina = ?
-	        AND elemento = ?
-	    """.format(tablaTareas)
-	
-	    params = [str(maquina), str(elemento)]
-	    data = system.db.runPrepQuery(query, params, databaseTareas)
-	
-	    if not data or len(data) == 0:
-	        print "No se encontraron registros en", tablaTareas, "para maquina/elemento"
-	        return False
-	
-	    ocurrenciaActual = data[0][0]
-	    print "Ocurrencia actual:", ocurrenciaActual
-	
-	    #---UPDATE de ocurrencia--------------------------
-	    queryUpdate = """
-	        UPDATE {0}
-	        SET ocurrencia = ?
-	        WHERE maquina = ?
-	        AND elemento = ?
-	    """.format(tablaTareas)
-	
-	    paramsUpdate = [newOcurrencia, str(maquina), str(elemento)]
-	    filasAfectadas = system.db.runPrepUpdate(queryUpdate, paramsUpdate, databaseTareas)
-	
-	    if filasAfectadas == 0:
-	        print "No se actualizó ningún registro en", tablaTareas
-	        return False
-	
-	    print "Ocurrencia actualizada correctamente a", newOcurrencia
-	    return True
-	
-	except Exception as e:
-	    print "Error en script de actualización de ocurrencia:", str(e)
-	    return False
+    # Tareas.Data.Teorico.accionesCambioBandejaDescarga(referencia)
+    """
+    Cambia la ocurrencia del cambio de bandeja cuando se inicializa un estandar
+    """
+    #---PARAMETROS--------
+    databaseTareas = constantes.Database_Tareas
+    database = constantes.Database_Tareas_2
+    tablaTareas = constantes.LINEA + "_Secuencia"
+    tabla = "CGF_RACKS_DATA_MARTS"
+
+    maquina = "CELULA"
+    elemento = "Cambio de carga bandejas PP"
+    #---------------------
+    try:
+        #---Obtenemos valor RS_CANTIDAD--------------------------
+        query = """
+            SELECT TOP 1
+                RS_CANTIDAD
+            FROM {0}
+            WHERE RS_CODIGO_REFERENCIA = ?
+            AND RS_ETIQUETA_RACK_LOCAL LIKE 'GFV-%'
+            ORDER BY RS_FECHA DESC
+        """.format(tabla)
+
+        params = [str(referencia)]
+        data = system.db.runPrepQuery(query, params, database)
+
+        if not data or len(data) == 0:
+            print("No se encontraron datos en", tabla, "para referencia", referencia)
+            return False
+
+        valor = float(data[0][0])
+        if valor == 0:
+            print("RS_CANTIDAD = 0, no se puede dividir")
+            return False
+
+        newOcurrencia = 1 / valor
+        print("Valor:", valor)
+        print("Nuevo valor de ocurrencia:", newOcurrencia)
+
+        #---Obtenemos ocurrencia actual--------------------------
+        query = """
+            SELECT ocurrencia
+            FROM {0}
+            WHERE maquina = ?
+            AND elemento = ?
+        """.format(tablaTareas)
+
+        params = [str(maquina), str(elemento)]
+        data = system.db.runPrepQuery(query, params, databaseTareas)
+
+        if not data or len(data) == 0:
+            print("No se encontraron registros en", tablaTareas, "para maquina/elemento")
+            return False
+
+        ocurrenciaActual = data[0][0]
+        print("Ocurrencia actual:", ocurrenciaActual)
+
+        #---UPDATE de ocurrencia--------------------------
+        queryUpdate = """
+            UPDATE {0}
+            SET ocurrencia = ?
+            WHERE maquina = ?
+            AND elemento = ?
+        """.format(tablaTareas)
+
+        paramsUpdate = [newOcurrencia, str(maquina), str(elemento)]
+        filasAfectadas = system.db.runPrepUpdate(queryUpdate, paramsUpdate, databaseTareas)
+
+        if filasAfectadas == 0:
+            print("No se actualizó ningún registro en", tablaTareas)
+            return False
+
+        print("Ocurrencia actualizada correctamente a", newOcurrencia)
+        return True
+
+    except Exception as e:
+        print("Error en script de actualización de ocurrencia:", str(e))
+        return False
  
