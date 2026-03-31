@@ -516,8 +516,12 @@ def obtenerMinutoMC(celula, referencia):
 			raise ValueError("Sin fila MC en _Secuencia para celula=%s referencia=%s" % (celula, referencia))
 
 		if len(data) > 1:
-			logger.error("Más de una fila MC para celula=%s referencia=%s" % (celula, referencia))
-			raise ValueError("MC ambiguo en _Secuencia para celula=%s referencia=%s" % (celula, referencia))
+			# Seleccionar el MC con menor min_std (más conservador)
+			# Esto evita el error "MC ambiguo" cuando hay múltiples filas MC válidas
+			logger.warn("Más de una fila MC para celula=%s referencia=%s (%d filas). Seleccionando min_std más bajo." % (celula, referencia, len(data)))
+			mc_min = min(row[0] for row in data)
+			logger.info("MC resuelto (múltiples MC, seleccionado mínimo) para celula=%s referencia=%s -> min_std=%s" % (celula, referencia, str(mc_min)))
+			return float(mc_min)
 
 		mc_min = data[0][0]
 		logger.info("MC resuelto para celula=%s referencia=%s -> min_std=%s" % (celula, referencia, str(mc_min)))
