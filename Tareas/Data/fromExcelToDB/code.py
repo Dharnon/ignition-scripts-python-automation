@@ -530,27 +530,54 @@ def obtenerMinutoMC(celula, referencia):
 		raise
 
 
+def usaTiempoMC(tarea):
+	# Tareas.Data.fromExcelToDB.usaTiempoMC(tarea)
+	"""
+	Determina si una tarea debe usar tiempo de máquina crítica (MC) normalizado.
+
+	Regla: Todas las tareas recurrentes usan MC excepto las que comienzan con 'CH',
+	que tienen lógica especial de contador y usan su propio min_std.
+
+	Args:
+	    tarea: Nombre de la tarea (ej: 'Cambio Herramienta 1/12')
+
+	Returns:
+	    True si debe usar MC, False si debe usar min_std original
+	"""
+	if tarea is None:
+	    return True  # Por seguridad, usar MC si no se puede determinar
+	return not tarea.startswith("CH")
+
+
 def tareasTable(celula, referencia):
 	# Tareas.Data.fromExcelToDB.tareasTable(celula, referencia)
 	#---INFO-----------------------------------------------------------
 	"""
 	Según la tabla Secuencia, inserta en la tabla de Tareas.
+	
+	Para tareas recurrentes, el campo 'min' se normaliza al tiempo de la máquina
+	crítica (MC). Las tareas CH mantienen su contador de vida-útil (tool-life)
+	pero usan MC para el cálculo de tiempo.
 	"""
 	#------------------------------------------------------------------
 	#---PARAMETROS-----------------------------------------------------
 	tablaSecuencia = constantes.LINEA + "_Secuencia"
 	tablaTareas = constantes.LINEA + "_Tareas"
 	database = constantes.Database_Tareas
-	tablaSecCompl = "[" + database + "].[dbo].[" + tablaSecuencia + "]"
 	#------------------------------------------------------------------
+	logger = system.util.getLogger("Tareas.Data.fromExcelToDB.tareasTable")
 	
 	#---Borrar tabla
 	Tareas.Data.fromExcelToDB.deleteTable(tablaTareas, referencia, celula)
+	logger.info("TareasTable: celula=%s referencia=%s - Iniciando normalizacion" % (celula, referencia))
 
 	#---Resolver MC para esta celula/referencia-----------------------
 	mc_min = Tareas.Data.fromExcelToDB.obtenerMinutoMC(celula, referencia)
+	logger.info("TareasTable: MC resuelto=%s para celula=%s referencia=%s" % (mc_min, celula, referencia))
 
 	#---Insertar tabla con minutos normalizados a MC------------------
+	# All recurring tasks (including CH) use MC time for scheduling
+	# CH keeps tool-life for counter but time side uses MC
 	query = """
 	INSERT INTO [dbo].[{tablaTareas}] (
 	    referencia,
@@ -578,33 +605,42 @@ def tareasTable(celula, referencia):
 	    min_std,
 	    ? AS min
 	FROM 
-	    {tablaSecCompl}
+	    {tablaSecuencia}
 	WHERE
 	    ocurrencia > 0
 	    AND referencia = ?
 	    AND celula = ?
 	""".format(
 	    tablaTareas=tablaTareas,
-	    tablaSecCompl=tablaSecuencia
+	    tablaSecuencia=tablaSecuencia
 	)
 
 	# Ejecutar el query
 	try:
-	    # Orden de parámetros: MC, referencia, celula
-	    system.db.runPrepUpdate(query, [mc_min, referencia, celula], database)
+	    # Orden de parámetros: mc_min, referencia, celula
+	    filas_afectadas = system.db.runPrepUpdate(query, [mc_min, referencia, celula], database)
+	    logger.info("TareasTable: Insertadas %s filas para celula=%s referencia=%s" % (filas_afectadas, celula, referencia))
 	except Exception as e:
+	    logger.error("TareasTable: Error al insertar los datos: %s" % str(e))
 	    system.gui.errorBox("Error al insertar los datos: " + str(e))
+	    raise
 	
 	return True
 	
 def insertarTareasEnTablaResumen(celula, referencia):
 	# Tareas.Data.fromExcelToDB.insertarTareasEnTablaResumen(celula, referencia)
 	"""
-	Obtener la información general para la vista de tareas
+	Obtener la información general para la vista de tareas.
+	Esta función lee de LINEA_Tareas (que ya tiene min normalizado a MC)
+	y escribe en LINEA_Tareas_Resumen.
 	"""
+	logger = system.util.getLogger("Tareas.MC")
+	logger.info("insertarTareasEnTablaResumen: INICIO celula=%s referencia=%s" % (celula, referencia))
+	
 	#---PARAMETROS----------------------------------------------
-	# Obtener los datos desde la función existente
+	# Obtener los datos desde la función existente (que lee de LINEA_Tareas con min=MC)
 	dataset = Tareas.Data.Teorico.obtenerTareas(celula, referencia)
+	logger.info("insertarTareasEnTablaResumen: Obtenidas %s tareas de LINEA_Tareas" % dataset.rowCount)
 
 	# Nombre de la tabla de destino
 	tablaTareasResumen = constantes.LINEA + "_Tareas_Resumen"
@@ -616,6 +652,7 @@ def insertarTareasEnTablaResumen(celula, referencia):
 	#Tareas.Data.fromExcelToDB.deleteTable(tablaTareasResumen, referencia, celula)
 	#---Poner los ids de la tabla como inactivo
 	Tareas.Data.fromExcelToDB.inactivoTable(tablaTareasResumen, referencia, celula)
+	logger.info("insertarTareasEnTablaResumen: Marcadas tareas anteriores como inactivas")
 	#-------------------------------------------------------------
 
 	# Preparar la query de inserción
@@ -633,6 +670,7 @@ def insertarTareasEnTablaResumen(celula, referencia):
 	""".format(tabla=tablaTareasResumen)
 
 	# Recorrer el dataset e insertar cada fila
+	filas_insertadas = 0
 	for i in range(dataset.rowCount):
 		params = [
 			dataset.getValueAt(i, "referencia"),
@@ -645,8 +683,9 @@ def insertarTareasEnTablaResumen(celula, referencia):
 		]
 
 		system.db.runPrepUpdate(insert_query, params, database)
+		filas_insertadas += 1
 
-	print "Inserción completada: {} filas insertadas en '{}'.".format(dataset.rowCount, tablaTareasResumen)
+	logger.info("insertarTareasEnTablaResumen: COMPLETADO - %s filas insertadas en '%s'" % (filas_insertadas, tablaTareasResumen))
 	
 
 import system.db

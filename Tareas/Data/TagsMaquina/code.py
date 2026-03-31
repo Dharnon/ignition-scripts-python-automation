@@ -288,6 +288,18 @@ def usaContadorCelula(nombreTarea):
 	return not str(nombreTarea).startswith("CH")
 
 
+def obtenerContadorEfectivo(celula, referencia, num, tarea):
+	# Tareas.Data.TagsMaquina.obtenerContadorEfectivo(celula, referencia, num, tarea)
+	"""
+	Devuelve el contador efectivo de piezas para una tarea.
+	- Para tareas recurrentes (no CH): usa el contador automatico de celula.
+	- Para tareas CH: devuelve None (mantiene logica de vida util de herramienta).
+	"""
+	if usaContadorCelula(tarea):
+		return piezasMaquinaTurno_Automatica(celula, referencia)
+	return None
+
+
 def completarTarea(celula, referencia, num, nombreTarea):
 	# Tareas.Data.TagsMaquina.completarTarea(celula, referencia, num, nombreTarea)
 	"""

@@ -4,7 +4,15 @@ def cargarEstandar(filepath, pages):
 	Llamadas a funciones para cargar un estnandar en base de datos.
 	pages 4: del 0 al 3
 	ruta = "\R120638-R120636-R120631-R120631.xlsx"
+	
+	Flujo MC:
+	1. excelToDb_fb -> LINEA_Secuencia (min_std original)
+	2. tareasTable -> LINEA_Tareas (min normalizado a MC via obtenerMinutoMC)
+	3. insertarTareasEnTablaResumen -> LINEA_Tareas_Resumen (lee de LINEA_Tareas)
 	"""
+	logger = system.util.getLogger("Tareas.MC")
+	logger.info("cargarEstandar: INICIO filepath=%s pages=%s" % (filepath, pages))
+	
 	try:
 		#filepath = constantes.pathExcel + str(ruta)
 		#filepath = str(ruta)
@@ -12,19 +20,25 @@ def cargarEstandar(filepath, pages):
 
 		#---Leemos de las paginas del excel e insertamos en BBDD
 		for page in range(pages):
+			logger.info("cargarEstandar: Procesando page=%s" % page)
 			datos = Tareas.Data.fromExcelToDB.excelToDb_fb(filepath, page) # Actualizamos en la tabla Secuencia
 			celula = datos[0]
 			referencia = datos[1]
+			logger.info("cargarEstandar: Celula=%s Referencia=%s" % (celula, referencia))
 			#---Actualizamos ocurrencia de Bandeja descarga
 			Tareas.Data.Teorico.accionesCambioBandejaDescarga(referencia)
 			#---Transformamos los datos del excel a datos a la tabla de tareas final
+			#-> tareasTable normaliza 'min' a MC usando obtenerMinutoMC
 			Tareas.Data.fromExcelToDB.tareasTable(celula, referencia)
+			#-> insertarTareasEnTablaResumen lee de LINEA_Tareas (ya con MC normalizado)
 			Tareas.Data.fromExcelToDB.insertarTareasEnTablaResumen(celula, referencia)
+			logger.info("cargarEstandar: Page=%s completado" % page)
 			
+		logger.info("cargarEstandar: COMPLETADO")
 		return True
     
    	except Exception as e:
-   		system.util.getLogger("ScriptError").error("Tareas.Secuencia.General.cargarEstandar(): {}".format(str(e)))
+   		logger.error("cargarEstandar: ERROR - %s" % str(e))
    		return False
 
 def iniciarEstandar_v0(celula):
@@ -82,19 +96,23 @@ def iniciarEstandar(celula):
     - Mantiene intactos los datos de las demás células.
     """
     import system.dataset as ds
+    logger = system.util.getLogger("Tareas.MC")
+    logger.info("iniciarEstandar: INICIO celula=%s" % celula)
 
     try:
         #---PARAMETROS-------------------------
         tp = constantes.tag_provider
         celulaLinea = constantes.celulaLinea
         referencia = Sinoptico.Data.General.obtenerReferencia(celula)
+        logger.info("iniciarEstandar: Referencia=%s" % referencia)
 
-        #---Obtenemos los tiempos que tarda cada maquina
+        #---Obtenemos los tiempos que tarda cada maquina (ya normalizados a MC en LINEA_Tareas)
         datasetMinutos = Tareas.Data.Teorico.obtenerTiemposMaquina(celula, referencia)
         #---Obtenemos las tareas de la tabla Tareas de base de datos
         datasetTareas = Tareas.Data.Teorico.obtenerTareas(celula, referencia)
         #---Segun los tiempos y las tareas, calculamos la data a enviar
         datasetNuevo = Tareas.Data.Teorico.generarDatasetTiempos(datasetMinutos, datasetTareas)
+        logger.info("iniciarEstandar: Dataset generado con %s tareas" % datasetNuevo.rowCount)
 
         #---Leemos el dataset existente-----------------------------------------------------------------
         path = tp + "Dataset/Tareas_Celula" + celulaLinea
@@ -124,13 +142,12 @@ def iniciarEstandar(celula):
         
         # Actualizar tarea grafico
         Tareas.Data.Independiente.actualizarTareaGrafico(celula)
+        logger.info("iniciarEstandar: COMPLETADO celula=%s" % celula)
 
         return True
 
     except Exception as e:
-        system.util.getLogger("ScriptError").error(
-            "Tareas.Secuencia.General.iniciarEstandar(): {}".format(str(e))
-        )
+        logger.error("iniciarEstandar: ERROR celula=%s - %s" % (celula, str(e)))
         return False
  
 		

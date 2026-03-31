@@ -408,6 +408,11 @@ def editarMinutosMaquina(referencia, maquina, celula, minutos):
 		# 3) Refrescar tabla resumen solo para esta celula/referencia
 		Tareas.Data.fromExcelToDB.insertarTareasEnTablaResumen(celula, referencia)
 
+		# 4) Si la referencia editada es la activa, reconstruir el dataset activo
+		referencia_actual = Sinoptico.Data.General.obtenerReferencia(celula)
+		if referencia == referencia_actual:
+			Tareas.Data.TagsMaquina.tareasPorMaquinaGeneral(celula)
+
 		return True
 
 	except Exception as e:

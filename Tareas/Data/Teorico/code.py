@@ -73,9 +73,10 @@ def obtenerTiemposMaquina(celula, referencia):
     else:
         dataset = system.db.runQuery(query, database)
 
-    print("Tiempos maquina encontrados:", dataset.rowCount)
+    logger = system.util.getLogger("Tareas.MC")
+    logger.info("obtenerTiemposMaquina: Encontrados %s tiempos de maquina para celula=%s referencia=%s" % (dataset.rowCount, celula, referencia))
     # for row in range(dataset.getRowCount()):
-    #     print(dataset.getValueAt(row, "maquina"), dataset.getValueAt(row, "minutos"), dataset.getValueAt(row, "celula"))
+    #     logger.info("  Maq=%s min=%s" % (dataset.getValueAt(row, "maquina"), dataset.getValueAt(row, "minutos")))
 
     return dataset
  
@@ -280,11 +281,13 @@ def obtenerTareas(celula, referencia):
 
     dataset = system.db.runPrepQuery(query, params, database) if params else system.db.runQuery(query, database)
 
-    print("Filas obtenidas:", dataset.rowCount)
-    for row in range(dataset.getRowCount()):
-        print(dataset.getValueAt(row, "referencia"), dataset.getValueAt(row, "tarea"),
-              dataset.getValueAt(row, "elementos"), dataset.getValueAt(row, "maquina"),
-              dataset.getValueAt(row, "ocurrencia"))
+    logger = system.util.getLogger("Tareas.MC")
+    logger.info("obtenerTareas: Obtenidas %s tareas para celula=%s referencia=%s" % (dataset.rowCount, celula, referencia))
+    # for row in range(dataset.getRowCount()):
+    #     logger.info("  Tarea=%s Maq=%s Ocurrencia=%s" % (
+    #         dataset.getValueAt(row, "tarea"),
+    #         dataset.getValueAt(row, "maquina"),
+    #         dataset.getValueAt(row, "ocurrencia")))
 
     return dataset
 	
@@ -355,9 +358,13 @@ def generarDatasetTiempos(datasetMinutos, datasetTareas):
 	Devuelve un Dataset de Ignition con:
 	['tarea', 'cuando', 'celula', 'maquina', 'elemento', 'completado']
 	Al comparar 'celula' y 'maquina' de dos datasets, y multiplicar minutos × ocurrencia.
+	Los minutos ya están normalizados a MC desde tareasTable().
 	"""
 	from system.dataset import toDataSet
 	import system.date
+	logger = system.util.getLogger("Tareas.MC")
+	
+	logger.info("generarDatasetTiempos: INICIO - datasetMinutos=%s filas, datasetTareas=%s filas" % (datasetMinutos.rowCount, datasetTareas.rowCount))
 
 	# Columnas finales
 	columnas = ["tarea", "cuando", "celula", "maquina", "elemento", "completado"]
@@ -397,9 +404,9 @@ def generarDatasetTiempos(datasetMinutos, datasetTareas):
 		        total_minutos = 8 * 60
 		        num_repeticiones = total_minutos // newocurrencia
 		        
-		        print "Tarea: {}, Ocurrencia: {}, Célula: {}, Máquina: {}".format(
-		            tarea, newocurrencia, celula, maquina
-		        )
+		        logger.info("generarDatasetTiempos: Tarea=%s Minutos=%s Ocurrencia=%s Celula=%s Maquina=%s" % (
+		            tarea, minutos, newocurrencia, celula, maquina
+		        ))
 		        
 		        # SIEMPRE añadir la primera ocurrencia (sin importar si está fuera de 8 horas)
 		        primera_cuando = system.date.addMinutes(base_time, int(newocurrencia))
@@ -410,6 +417,7 @@ def generarDatasetTiempos(datasetMinutos, datasetTareas):
 		            cuando = system.date.addMinutes(base_time, (j+1) * int(newocurrencia))
 		            resultados.append([tarea, cuando, celula, maquina, elemento, completado])
 
+	logger.info("generarDatasetTiempos: COMPLETADO - %s tareas generadas" % len(resultados))
 	# Crear y devolver dataset
 	return toDataSet(columnas, resultados)
 	

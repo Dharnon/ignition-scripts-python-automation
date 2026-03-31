@@ -61,7 +61,21 @@ def obtenerOcurrencia(celula, referencia, maquina, tarea):
 	
 	# Si no se encontró ninguna coincidencia
 	raise ValueError("No se encontró ninguna tarea que comience con: '{}'".format(tarea))
-	
+
+
+def usaTiempoCritico(tarea):
+	# Tareas.Data.General.usaTiempoCritico(tarea)
+	"""
+	Devuelve True si la tarea debe usar tiempo critico de maquina (MC).
+	Todas las tareas recurrentes usan MC tiempo (incluyendo CH).
+	CH es excepcion solo para contador, no para tiempo.
+	"""
+	if tarea is None:
+		return True
+	# Todas las tareas usan MC tiempo
+	return True
+
+
 def crearNuevasTareas(tarea, celula, maquina, elemento, rpt, ocurrencia, referencia):
     # Tareas.Data.General.crearNuevasTareas(tarea, celula, maquina, elemento, rpt, ocurrencia, referencia)
     """
@@ -76,6 +90,11 @@ def crearNuevasTareas(tarea, celula, maquina, elemento, rpt, ocurrencia, referen
     tp = constantes.tag_provider
     celulaLinea = constantes.celulaLinea
     tagPath = tp + "Dataset/Tareas_Celula" + celulaLinea
+    # ----------------------------------------------------------------
+
+    # --- OBTENER TIEMPO CRÍTICO (MC) PARA ESTA CELULA/REFERENCIA ----
+    # Las tareas recurrentes heredan el tiempo MC de la célula
+    mc_min = Tareas.Data.fromExcelToDB.obtenerMinutoMC(celula, referencia)
     # ----------------------------------------------------------------
 
     # --- INSERTAR EN BASE DE DATOS -----------------------------------
@@ -107,7 +126,7 @@ def crearNuevasTareas(tarea, celula, maquina, elemento, rpt, ocurrencia, referen
         1,
         celula,
         0,
-        None
+        mc_min  # Usar tiempo MC en lugar de None
     ]
 
     system.db.runPrepUpdate(query, params, database)
