@@ -25,6 +25,7 @@ def doPost(request, session):
 		elemento = data['elemento']
 		ocurrencia = data['ocurrencia']
 		referencia = data['referencia']
+		completar = bool(data.get('completar', False))
 		
 		referencia_actual = Sinoptico.Data.General.obtenerReferencia(celula)
 		
@@ -37,10 +38,16 @@ def doPost(request, session):
 		
 		if editar:
 			Administracion.Data.GestionTareas.editarOcurrenciaActualizarTag(tarea, maquina, celula, elemento, ocurrencia, referencia) # Actualizamos en el dataset del tag de Ignition
+		
+		# Opcional: completar tarea tras editar ocurrencia
+		if completar:
+			num = Sinoptico.Data.General.obtenerNumeroMaquina(celula, maquina)
+			manual = 1
+			Tareas.Secuencia.General.completarTarea(celula, referencia_actual, maquina, tarea, num, manual)
 	
 		return {
 	        "json": {
-	            "tarea": "Ocurrencia editada."
+	            "tarea": "Ocurrencia editada." if not completar else "Ocurrencia editada y tarea completada."
 	        }
 	    }
 	except Exception as e:

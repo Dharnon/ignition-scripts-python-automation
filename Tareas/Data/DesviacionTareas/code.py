@@ -127,6 +127,9 @@ def desviacionesTareas():
 											valorGearFlow = Tareas.Data.GearFlow.cambioHerramientas(ahora, tipoSolicitud="HERRAMIENTA", referencia=referencia, celula=celula, herramienta=tipoMaq)
 										except:
 											valorGearFlow = None
+									
+									# Normalizar respuesta para evitar falsos negativos ("ok", " OK ", etc.)
+									valorGearFlowOk = (str(valorGearFlow).strip().upper() == "OK")
 
 									# Leer estado del flag (si no existe, asumimos False)
 									try:
@@ -137,7 +140,7 @@ def desviacionesTareas():
 
 									# Si ya estaba marcado como esperando
 									if flag:
-										if valorGearFlow == 'OK':
+										if valorGearFlowOk:
 											logger.info("GearFlow OK detectado y FlagCH presente. Completando tarea de CH " + tipoMaq)
 											Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
 											system.tag.writeBlocking(flag_tag, [False])
@@ -147,7 +150,7 @@ def desviacionesTareas():
 											Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, 0)
 									# Si no estaba marcado, y no hay OK vamos a marcar y congelar
 									else:
-										if valorGearFlow == 'OK':
+										if valorGearFlowOk:
 											logger.info("GearFlow OK detectado. Completando tarea de CH " + tipoMaq)
 											Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
 										else:
@@ -460,10 +463,10 @@ def accionesCH_PLC(celula, num):
 		
 		vidaTotal = vidaTeorica - vidaUtil
 	
-		if vidaTotal == 0:
-			return "Bad"
-		else:
-			return vidaTotal
+		# Si la vida llegó a 0 (o menor), no es error: activa la ruta de espera/validación en CH.
+		if vidaTotal <= 0:
+			return 0
+		return vidaTotal
 	
 	except Exception as e:
 		print("Tareas.Data.DesviacionTareas.accionesCH_PLC():", str(e))
@@ -502,10 +505,10 @@ def accionesCH_CNC_Torno_v0(celula, num):
 		
 		vidaTotal = vidaMax - vidaRealCantidad # Obtenemos todas las vidas utiles en total de la herramienta
 		
-		if vidaTotal == 0:
-			return "Bad"
-		else:
-			return vidaTotal
+		# Si la vida llegó a 0 (o menor), no es error: activa la ruta de espera/validación en CH.
+		if vidaTotal <= 0:
+			return 0
+		return vidaTotal
 		
 	except Exception as e:
 		print("Tareas.Data.DesviacionTareas.accionesCH_CNC_Torno():", str(e))
