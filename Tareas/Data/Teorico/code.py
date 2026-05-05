@@ -226,7 +226,8 @@ def obtenerTareas(celula, referencia):
         params.append(str(celula))
 
     query = """
-    WITH GroupedData AS (
+    WITH BaseData AS (
+        -- Step 1: GROUP BY without concatenation (subqueries not allowed in GROUP BY)
         SELECT 
             referencia,
             tarea,
@@ -234,17 +235,6 @@ def obtenerTareas(celula, referencia):
             COALESCE(ocurrencia, ocurrenciaStd) AS ocurrencia_final,
             turno,
             celula,
-            STUFF((
-                SELECT ' | ' + elemento
-                FROM {tabla} AS t2
-                WHERE t2.referencia = t1.referencia 
-                  AND t2.tarea = t1.tarea
-                  AND (t2.maquina = t1.maquina OR (t2.maquina IS NULL AND t1.maquina IS NULL))
-                  AND (COALESCE(t2.ocurrencia, t2.ocurrenciaStd) = COALESCE(t1.ocurrencia, t1.ocurrenciaStd) 
-                       OR (COALESCE(t2.ocurrencia, t2.ocurrenciaStd) IS NULL AND COALESCE(t1.ocurrencia, t1.ocurrenciaStd) IS NULL))
-                  AND (t2.turno = t1.turno OR (t2.turno IS NULL AND t1.turno IS NULL))
-                FOR XML PATH('')
-            ), 1, 3, '') AS elementos_concatenados,
             CASE 
                 WHEN CHARINDEX('/', tarea) > 0 THEN
                     CASE 
@@ -261,22 +251,31 @@ def obtenerTareas(celula, referencia):
             tarea NOT LIKE 'Carga%' AND
             tarea NOT LIKE 'Traslados%'
             {filtro}
-        GROUP BY referencia, tarea, maquina, ocurrencia, ocurrenciaStd, turno, celula
+        GROUP BY referencia, tarea, maquina, COALESCE(ocurrencia, ocurrenciaStd), turno, celula
     )
     SELECT DISTINCT
-        referencia,
+        BaseData.referencia,
         CASE 
-            WHEN turno = 1 THEN tarea_base + '1/1'
-            WHEN CHARINDEX('/', tarea) > 0 THEN 
-                tarea_base + '1/' + CAST(ocurrencia_final AS VARCHAR)
-            ELSE tarea
+            WHEN BaseData.turno = 1 THEN BaseData.tarea_base + '1/1'
+            WHEN CHARINDEX('/', BaseData.tarea) > 0 THEN 
+                BaseData.tarea_base + '1/' + CAST(BaseData.ocurrencia_final AS VARCHAR)
+            ELSE BaseData.tarea
         END AS tarea,
-        maquina,
-        ocurrencia_final AS ocurrencia,
-        elementos_concatenados AS elementos,
-        celula
-    FROM GroupedData
-    ORDER BY referencia, tarea;
+        BaseData.maquina,
+        BaseData.ocurrencia_final AS ocurrencia,
+        (SELECT STUFF((
+            SELECT ' | ' + elemento
+            FROM {tabla} AS t2
+            WHERE t2.referencia = BaseData.referencia 
+              AND t2.tarea = BaseData.tarea
+              AND (t2.maquina = BaseData.maquina OR (t2.maquina IS NULL AND BaseData.maquina IS NULL))
+              AND COALESCE(t2.ocurrencia, t2.ocurrenciaStd) = BaseData.ocurrencia_final
+              AND (t2.turno = BaseData.turno OR (t2.turno IS NULL AND BaseData.turno IS NULL))
+            FOR XML PATH('')
+        ), 1, 3, '')) AS elementos,
+        BaseData.celula
+    FROM BaseData
+    ORDER BY BaseData.referencia, tarea;
     """.format(tabla=tablaTareas, filtro=filtro)
 
     dataset = system.db.runPrepQuery(query, params, database) if params else system.db.runQuery(query, database)
@@ -353,73 +352,102 @@ def generarDatasetTiempos_v0(datasetMinutos, datasetTareas):
 	return toDataSet(columnas, resultados)
 	
 def generarDatasetTiempos(datasetMinutos, datasetTareas):
-	# Tareas.Data.Teorico.generarDatasetTiempos(datasetMinutos, datasetTareas)
-	"""
-	Devuelve un Dataset de Ignition con:
-	['tarea', 'cuando', 'celula', 'maquina', 'elemento', 'completado']
-	Al comparar 'celula' y 'maquina' de dos datasets, y multiplicar minutos × ocurrencia.
-	Los minutos ya están normalizados a MC desde tareasTable().
-	"""
-	from system.dataset import toDataSet
-	import system.date
-	logger = system.util.getLogger("Tareas.MC")
-	
-	logger.info("generarDatasetTiempos: INICIO - datasetMinutos=%s filas, datasetTareas=%s filas" % (datasetMinutos.rowCount, datasetTareas.rowCount))
+    # Tareas.Data.Teorico.generarDatasetTiempos(datasetMinutos, datasetTareas)
+    """
+    Devuelve un Dataset de Ignition con:
+    ['tarea', 'cuando', 'celula', 'maquina', 'elemento', 'completado']
+    Al comparar 'celula' y 'maquina' de dos datasets, y multiplicar minutos × ocurrencia.
+    Los minutos ya están normalizados a MC desde tareasTable().
+    Fallback: si faltan tiempos de maquina para CELULA o BIN PICKING,
+    se usa el tiempo MC de la referencia/celula para no perder tareas.
+    """
+    from system.dataset import toDataSet
+    import system.date
+    logger = system.util.getLogger("Tareas.MC")
 
-	# Columnas finales
-	columnas = ["tarea", "cuando", "celula", "maquina", "elemento", "completado"]
-	resultados = []
+    logger.info("generarDatasetTiempos: INICIO - datasetMinutos=%s filas, datasetTareas=%s filas" % (datasetMinutos.rowCount, datasetTareas.rowCount))
 
-	# Convertimos datasetMinutos a lista de dicts
-	minutos_lista = []
-	for i in range(datasetMinutos.rowCount):
-		minutos_lista.append({
-			'maquina': datasetMinutos.getValueAt(i, 'maquina'),
-			'celula': datasetMinutos.getValueAt(i, 'celula'),
-			'minutos': datasetMinutos.getValueAt(i, 'minutos'),
-			'elemento': datasetMinutos.getValueAt(i, 'elemento')
-		})
+    # Columnas finales
+    columnas = ["tarea", "cuando", "celula", "maquina", "elemento", "completado"]
+    resultados = []
 
-	# Hora actual como punto de inicio
-	base_time = system.date.now()
+    # Indexar minutos por (celula, maquina) normalizados para evitar fallos por espacios/case
+    minutos_index = {}
+    for i in range(datasetMinutos.rowCount):
+        maq_norm = str(datasetMinutos.getValueAt(i, 'maquina') or "").strip().upper()
+        cel_norm = str(datasetMinutos.getValueAt(i, 'celula') or "").strip().upper()
+        key = (cel_norm, maq_norm)
+        minutos_index[key] = datasetMinutos.getValueAt(i, 'minutos')
 
-	# Recorremos datasetTareas
-	for i in range(datasetTareas.rowCount):
-		tarea = datasetTareas.getValueAt(i, 'tarea')
-		maquina = datasetTareas.getValueAt(i, 'maquina')
-		celula = datasetTareas.getValueAt(i, 'celula')
-		ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia') or 0
-		elemento = datasetTareas.getValueAt(i, 'elementos')
-		completado = 0
+    # Cache de MC para no consultar repetidamente
+    mc_cache = {}
 
-		# Validar que ocurrencia sea positiva
-		if ocurrencia <= 0:
-			continue
-		# Buscar la primera coincidencia válida en datasetMinutos
-		for row in minutos_lista:
-		    if row['celula'] == celula and row['maquina'] == maquina:
-		        # Calcular intervalo
-		        minutos = row['minutos'] or 0
-		        newocurrencia = minutos * ocurrencia
-		        total_minutos = 8 * 60
-		        num_repeticiones = total_minutos // newocurrencia
-		        
-		        logger.info("generarDatasetTiempos: Tarea=%s Minutos=%s Ocurrencia=%s Celula=%s Maquina=%s" % (
-		            tarea, minutos, newocurrencia, celula, maquina
-		        ))
-		        
-		        # SIEMPRE añadir la primera ocurrencia (sin importar si está fuera de 8 horas)
-		        primera_cuando = system.date.addMinutes(base_time, int(newocurrencia))
-		        resultados.append([tarea, primera_cuando, celula, maquina, elemento, completado])
-		        
-		        # Añadir el resto solo si están dentro del límite de 8 horas
-		        for j in range(1, int(num_repeticiones)):  # Empezar desde 1 (la primera ya está añadida)
-		            cuando = system.date.addMinutes(base_time, (j+1) * int(newocurrencia))
-		            resultados.append([tarea, cuando, celula, maquina, elemento, completado])
+    # Hora actual como punto de inicio
+    base_time = system.date.now()
 
-	logger.info("generarDatasetTiempos: COMPLETADO - %s tareas generadas" % len(resultados))
-	# Crear y devolver dataset
-	return toDataSet(columnas, resultados)
+    # Recorremos datasetTareas
+    for i in range(datasetTareas.rowCount):
+        tarea = datasetTareas.getValueAt(i, 'tarea')
+        maquina = datasetTareas.getValueAt(i, 'maquina')
+        celula = datasetTareas.getValueAt(i, 'celula')
+        referencia = datasetTareas.getValueAt(i, 'referencia') if 'referencia' in datasetTareas.getColumnNames() else None
+        ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia') or 0
+        elemento = datasetTareas.getValueAt(i, 'elementos')
+        completado = 0
+        maq_norm = str(maquina or "").strip().upper()
+        cel_norm = str(celula or "").strip().upper()
+
+        # Validar que ocurrencia sea positiva
+        if ocurrencia <= 0:
+            continue
+
+        # 1) Minutos por match exacto (normalizado)
+        minutos = minutos_index.get((cel_norm, maq_norm))
+
+        # 2) Fallback MC para maquinas auxiliares sin tiempo explicito
+        if minutos is None and maq_norm in ('CELULA', 'BIN PICKING'):
+            if referencia is None:
+                logger.warn("generarDatasetTiempos: Sin referencia para fallback MC (celula=%s, maquina=%s, tarea=%s)" % (celula, maquina, tarea))
+                continue
+
+            cache_key = (str(celula), str(referencia))
+            if cache_key not in mc_cache:
+                try:
+                    mc_cache[cache_key] = Tareas.Data.fromExcelToDB.obtenerMinutoMC(celula, referencia)
+                except Exception as e:
+                    logger.warn("generarDatasetTiempos: Fallback MC no disponible para celula=%s referencia=%s (%s)" % (celula, referencia, str(e)))
+                    mc_cache[cache_key] = None
+
+            minutos = mc_cache[cache_key]
+
+        if minutos is None or minutos <= 0:
+            logger.warn("generarDatasetTiempos: Sin minutos validos para tarea=%s celula=%s maquina=%s" % (tarea, celula, maquina))
+            continue
+
+        # Calcular intervalo
+        newocurrencia = minutos * ocurrencia
+        if newocurrencia <= 0:
+            continue
+
+        total_minutos = 8 * 60
+        num_repeticiones = total_minutos // newocurrencia
+
+        logger.info("generarDatasetTiempos: Tarea=%s Minutos=%s Ocurrencia=%s Celula=%s Maquina=%s" % (
+            tarea, minutos, newocurrencia, celula, maquina
+        ))
+
+        # SIEMPRE añadir la primera ocurrencia (sin importar si está fuera de 8 horas)
+        primera_cuando = system.date.addMinutes(base_time, int(newocurrencia))
+        resultados.append([tarea, primera_cuando, celula, maquina, elemento, completado])
+
+        # Añadir el resto solo si están dentro del límite de 8 horas
+        for j in range(1, int(num_repeticiones)):  # Empezar desde 1 (la primera ya está añadida)
+            cuando = system.date.addMinutes(base_time, (j+1) * int(newocurrencia))
+            resultados.append([tarea, cuando, celula, maquina, elemento, completado])
+
+    logger.info("generarDatasetTiempos: COMPLETADO - %s tareas generadas" % len(resultados))
+    # Crear y devolver dataset
+    return toDataSet(columnas, resultados)
 	
 def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
 	# Tareas.Data.Teorico.reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, None)
@@ -432,6 +460,7 @@ def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
     """
     from system.dataset import toDataSet
     import system.date
+    logger = system.util.getLogger("Tareas.MC")
 
     tp = constantes.tag_provider
     celulaLinea = constantes.celulaLinea
@@ -494,17 +523,17 @@ def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
                 if clave not in no_completadas_antes or fecha > no_completadas_antes[clave][1]:
                     no_completadas_antes[clave] = (i, fecha)
 
-    # Duración y elemento por celula/maquina
+    # Duracion por celula/maquina normalizadas para evitar fallos por espacios/case
     min_dict = {}
     for i in range(datasetMinutos.rowCount):
-        key = (
-            str(datasetMinutos.getValueAt(i, 'celula')),
-            str(datasetMinutos.getValueAt(i, 'maquina'))
-        )
-        min_dict[key] = {
-            'minutos': datasetMinutos.getValueAt(i, 'minutos'),
-            'elemento': datasetMinutos.getValueAt(i, 'elemento')
-        }
+        cel_norm = str(datasetMinutos.getValueAt(i, 'celula') or "").strip().upper()
+        maq_norm = str(datasetMinutos.getValueAt(i, 'maquina') or "").strip().upper()
+        min_dict[(cel_norm, maq_norm)] = datasetMinutos.getValueAt(i, 'minutos')
+
+    # Cache de MC para fallback de maquinas auxiliares sin tiempo explicito
+    mc_cache = {}
+    columnas_tareas = datasetTareas.getColumnNames()
+    tiene_referencia = 'referencia' in columnas_tareas
 
     nuevas_filas = []
 
@@ -513,6 +542,7 @@ def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
         tarea = datasetTareas.getValueAt(i, 'tarea')
         celula = datasetTareas.getValueAt(i, 'celula')
         maquina = datasetTareas.getValueAt(i, 'maquina')
+        referencia = datasetTareas.getValueAt(i, 'referencia') if tiene_referencia else None
         ocurrencia = datasetTareas.getValueAt(i, 'ocurrencia') or 0
         elemento = datasetTareas.getValueAt(i, 'elementos')
         completado = 0
@@ -520,11 +550,25 @@ def reprogramarTareasDesdeHora(datasetMinutos, datasetTareas, horaBase=None):
         if ocurrencia <= 0:
             continue
 
-        key = (celula, maquina)
-        if key not in min_dict:
+        cel_norm = str(celula or "").strip().upper()
+        maq_norm = str(maquina or "").strip().upper()
+        duracion = min_dict.get((cel_norm, maq_norm))
+
+        # Fallback MC igual que en generarDatasetTiempos
+        if duracion is None and maq_norm in ('CELULA', 'BIN PICKING') and referencia is not None:
+            cache_key = (str(celula), str(referencia))
+            if cache_key not in mc_cache:
+                try:
+                    mc_cache[cache_key] = Tareas.Data.fromExcelToDB.obtenerMinutoMC(celula, referencia)
+                except Exception as e:
+                    logger.warn("reprogramarTareasDesdeHora: Fallback MC no disponible para celula=%s referencia=%s (%s)" % (celula, referencia, str(e)))
+                    mc_cache[cache_key] = None
+            duracion = mc_cache[cache_key]
+
+        if duracion is None or duracion <= 0:
+            logger.warn("reprogramarTareasDesdeHora: Sin minutos validos para tarea=%s celula=%s maquina=%s" % (tarea, celula, maquina))
             continue
 
-        duracion = min_dict[key]['minutos'] or 0
         new_ocurrencia = duracion * ocurrencia
         clave_tarea = (str(tarea), str(celula), str(maquina))
 

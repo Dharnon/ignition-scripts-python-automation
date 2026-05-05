@@ -1,0 +1,144 @@
+,,,,,,,,,,,,,,,
+REFERENCIA,R544000,SECUENCIA DE EVENTOS,"Min. Std ""D""",,1.115,"Min. Std ""D""(P&F)/1,3",,0.849548,Ciclos posibles,,269.618,P&Fi,,5.512,"Nº piezas
+autonomía"
+CELULA,142C,,"Min. Std ""R""",,0.162,"Min. Std ""R""(P&F)/1,3",,0.112646,Ciclos posibles Hombre,,460.831,Piezas,,269.618,
+MC,0.93,,Ida,,0.969,C.W,,1.780,Min.de trabajo manual,,274.990,Std,,4.15,45
+,,,,,,,,,,,,,,,
+,,Carga,0.00,0,,,,,,,,,,,
+,,Traslados.,0.02,6.127677727,,,,,,,,,,,
+,,Verificación,0.06,14.84095183,,,,,,,,,,,
+,,Descarga,0.01,2.265538626,,,,,,,,,,,
+,,Limpieza,0.06,15.32204369,,,,,,,,,,,
+,,Cambio de carga,0.03,7.79108691,,,,,,,,,,,
+,,Grafico,0.01,1.988431422,,,,,,,,,,,
+,,CH,1.08,290.4666307,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+MAQUINA,Nº,ELEMENTO,TIPO,T1,T2,T3,T4,T5,AC,P&F,MINUTOS STD,OCURRENCIA,MIN STD/CICLO,MIN STD/CICLO (P&F),DESCRIPCIÓN
+TORNO,1,TORNEAR,MC,90,,,,,100,1.00,0.900,1,0.9000,0.900,Tiempo de máquina
+TORNO,2,MEDICIÓN,MC,25,,,,,100,1.00,0.250,  1/10,0.0250,0.025,Tiempo de máquina
+TORNO,3,"Posicionarse en mesa para verificar. G-10 = 0,052",R,5.2,,,,,100,1.10,0.057,   1/100,0.0006,0.001,Verificación
+TORNO,4,Soplar con manguera de aire pieza a verificar.,R,20,24,18,18,20,105,1.11,0.233,   1/100,0.0023,0.002,Verificación
+TORNO,5,"Tol. Verificar calibre de herradura. (Diámetro exterior Ø 91,08 +- 0,05 F 30=0,120+0,06=0,180",R,18,,,,,100,1.10,0.198,   1/100,0.0020,0.002,Verificación
+TORNO,6,"Tol. Verificar diametro chaflan.  6,09 ± 0,1 ",R,18,,,,,100,1.10,0.198,   1/100,0.0020,0.002,Verificación
+TORNO,7,"Tol. Verificar calibre de herradura. (Anchura Ø 32,10-32,15))",R,18,,,,,100,1.10,0.198,   1/100,0.0020,0.002,Verificación
+TORNO,8,"Tol. Verificar alexómetro (Diámetro interior Ø 56,06 (+0,07 / +0,05)) ",R,10.3,,,,,100,1.10,0.113,   1/100,0.0011,0.001,Verificación
+TORNO,9,Tol. Verificar Paralelismo,R,16,,,,,100,1.10,0.180,   1/100,0.0018,0.002,Verificación
+TORNO,10,"Tol. Verificar diametro chaflan.  66,17+-0,1 ",R,16,,,,,100,1.10,0.180,   1/100,0.0018,0.002,Verificación
+TORNO,14,"Desplazarse a zona de trabajo. 12 M -G-293= 0,197",R,18,,,,,100,1.10,0.197,   1/25 ,0.0079,0.007,Traslados.
+TALLADORA,15,TALLAR,M,88,,,,,100,1.00,0.880,1,0.8800,0.880,Tiempo de máquina
+TALLADORA,16,Soplar con manguera de aire pieza a verificar.,R,20,24,18,18,20,105,1.11,0.233,   1/200,0.0012,0.001,Verificación
+TALLADORA,17,Tol. Verificar micro de platillos.,R,17,,,,,100,1.10,0.186,   1/200,0.0009,0.001,Verificación
+TALLADORA,18,Revisar chaflan y rebaba,R,10,12,,,,110,1.10,0.133,   1/200,0.0007,0.001,Verificación
+BROCHADORA,19,BROCHAR-MARCAR-ROBOT,M,80,,,,,100,1.00,0.800,1,0.8000,0.800,Tiempo de máquina
+BROCHADORA,20,Soplar con manguera de aire pieza a verificar.,R,20,24,18,18,20,105,1.11,0.233,   1/100,0.0023,0.002,Verificación
+BROCHADORA,21,"Tol. Ancho de chavetero 4,10±0,025 (ambos lados) F-25= 0,114",R,10,,,,,100,1.10,0.114,   1/100,0.0011,0.001,Verificación
+BROCHADORA,22,Tol. Verificar calibre verdaderaposición.,R,35,,,,,115,1.12,0.451,   1/100,0.0045,0.004,Verificación
+BROCHADORA,23,"Tol. Verificar profundidad de chavetero. 58,106(+0,174, +0,014)",R,35,,,,,115,1.12,0.451,   1/100,0.0045,0.004,Verificación
+BROCHADORA,24,"Tol. Verificar calibre de relación chavetero diente. ±0,15 (chaflán 50º abajo)",R,30,27,34,41,24,110,1.11,0.381,   1/100,0.0038,0.003,Verificación
+BROCHADORA,25,Tol. Verificación de referencia y posición de chavetero.,R,10,12,,,,110,1.10,0.133,   1/100,0.0013,0.001,Verificación
+LAVADORA,26,"Posicionarse en cinta de salida de lavadora. G-157= 0,086",R,8,,,,,100,1.10,0.086,  1/60,0.0014,0.001,Traslados.
+LAVADORA,27,Posicionarse vacio en zona de trabajo.,R,15,,,,,100,1.10,0.166,  1/60,0.0028,0.003,Traslados.
+CELULA,28,Piezas de cinta de salida a percha.,R,41.66666667,38.33333333,40,41.66666667,40,125,1.12,0.565,  1/60,0.0094,0.008,Descarga
+VARIOS,29,"Traslado a zona de trabajo, según porceda. (20m G-982= 0,323)",R,29,,,,,100,1.10,0.323,  1/25,0.0129,0.012,Traslados.
+TORNO,30,Limpiar torno con manguera de aire y gancho.,D,56,63,49,,,120,1.12,0.753,  1/60,0.0125,0.011,Limpieza
+TORNO,31,Retirar viruta con gancho de cinta a contenedor en parte lateral,R,280,,,,,100,1.12,3.136,   1/140,0.0224,0.020,Limpieza
+CELULA,32,Limpiar virutas de torno final de la jornada.,D,176,187,161,,,115,1.12,2.250,   1/400,0.0056,0.005,Limpieza
+CELULA,33,Limpiar talladora con soplador.,D,200,,,,,90,1.12,2.016,   1/400,0.0050,0.005,Limpieza
+CELULA,34,Limpiar talladora zona trasera.,D,200,,,,,90,1.12,2.016,   1/400,0.0050,0.005,Limpieza
+CELULA,35,Poner contador de  shifting a cero.,R,55,,,,,100,1.12,0.616,   1/400,0.0015,0.001,Limpieza
+CELULA,36,Limpiar virutas en chamfer,D,176,187,161,,,115,1.12,2.250,   1/400,0.0056,0.005,Limpieza
+CELULA,37,"Limpiar pinzas de robot, asiento de piezas en marpos, y maquina de grabar.",D,140,150,,,,115,1.10,1.834,   1/400,0.0046,0.004,Limpieza
+VARIOS,39,Girar bandeja de piezas 180º,R,25,25,,,,80,1.10,0.220,   1/192,0.0011,0.001,Limpieza
+BIN PICKING,40,Cambio de carga bandejas PSP,R,516,,,,,100,1.10,5.678,   1/384,0.0148,0.013,Cambio de carga
+CELULA,41,Cambio de carga bandejas PP,R,593,,,,,100,1.10,6.528,   1/384,0.0170,0.015,Cambio de carga
+VARIOS,42,Cumplementar parametros de control de calidad.(8),R,120,,,,,100,1.10,1.320,   1/100,0.0132,0.012,Verificación
+VARIOS,43,"Modificar pantalla, seleccionar referencia de combinación.",R,50,,,,,100,1.10,0.550,   1/400,0.0014,0.001,Verificación
+VARIOS,44,Etiquetas gear flow,R,150,,,,,130,1.10,2.145,   1/175,0.0123,0.011,Verificación
+TORNO,45,CH.-Abrir puertas y desplazar torreta a posición de trabajo,D,92,,,,,100,1.10,1.012,   1/400,0.0025,0.002,CH
+TORNO,46,"CH.-Cambio  herramientas 2º cabezal, soplando herramienta y gitando torreta.",D,930,,,,,100,1.10,10.230,   1/400,0.0256,0.023,CH
+TORNO,47,"CH.- Cambio  herramientas 1º cabezal, soplando herramienta  y girando torreta.",D,678,,,,,100,1.10,7.458,   1/400,0.0186,0.017,CH
+TORNO,48,"CH.- Posicionar cabezales, cerrar puertas e iniciar programa de medición.",D,70,,,,,100,1.10,0.770,   1/400,0.0019,0.002,CH
+TORNO,49,CH.-Medición de herramientas.,D,250,,,,,100,1.10,2.750,   1/400,0.0069,0.006,CH
+TORNO,50,"CH.- Hacer pieza y medir hasta corregir,",D,780,,,,,100,1.10,8.580,   1/400,0.0215,0.020,CH
+TORNO,51,"Medir pieza en inicio de turno. MEDICIÓN=0,691",R,63,,,,,100,1.10,0.694,   1/400,0.0017,0.002,CH
+VARIOS,52,Programa creces. Doble pieza de medición.,MC,230,,,,,100,1.00,2.300,   1/400,0.0058,0.006,CH
+CELULA,53,Limpiar pieza y secar,R,80,,,,,110,1.12,0.986,   1/400,0.0025,0.002,Grafico
+CELULA,54,"Desplazarse con pieza a verificación, apuntar referencia en papel y dejar. 
+30 MTS A-119=,076+,442=0,518 + 0,115",R,57.54545455,,,,,100,1.10,0.633,   1/400,0.0016,0.001,Grafico
+CELULA,55,"Coger pieza y desplazarse a celula.60 MTS G-1058=,798",R,72.54545455,,,,,100,1.10,0.798,   1/400,0.0020,0.002,Grafico
+CELULA,56,"Coger pieza y desplazarse a celula. 50 MTS A-119=0,846",R,77,,,,,100,1.10,0.846,   1/400,0.0021,0.002,Grafico
+TALLADORA,45,Cambio fresa madre,D,0,,,,,100,1.1,10.23,   1/2300,1,1,CH
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,

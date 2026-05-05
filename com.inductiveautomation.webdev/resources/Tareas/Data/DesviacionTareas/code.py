@@ -1,194 +1,194 @@
 def desviacionesTareas():
-	# Tareas.Data.DesviacionTareas.desviacionesTareas()
-	"""
-	Repasa los tiempos de produccion por cada tarea de cada maquina y celula.
-	Si hay alguna desviacion actualiza el dataset de tareas llamando a la funcion correspondiente
-	Si hay tareas completadas tambien las actualiza.
-	"""
-	#---PARAMETROS--------------------------------------------------
-	celulas = constantes.celulas
-	tp = constantes.tag_provider
-	manual = 0 # Significa que se ha hecho automaticamente y no de manera manual
-	#---------------------------------------------------------------
-	logger = system.util.getLogger('Prueba JD')
-	
-	for celula in celulas:
-		print "======================== CELULA " + str(celula) + " ========================"
-		# Numero de maquinas por celula
-		path = tp + "Celula" + celula
-		total = len(system.tag.browse(path, {"name": "Maq_*"})) # Mira el numero de tags dentro de una carpeta, que empiecen por "Maq_"
-		referencia = Sinoptico.Data.General.obtenerReferencia(celula)		# Obtener referencia
-		logger.info("Celula: " + str(celula))
-		for num in range(1, total + 1):
-			try:
-				conexion = Sinoptico.Data.General.obtenerConexion(celula, num)
-				print "------ Numero: " + str(num) + " ------"
-				print "------ Conexion: " + str(conexion) + " ------"
-				if conexion == 'Good':
-					tipoMaq = Sinoptico.Data.General.obtenerTipoMaquina(celula, num)	# Mira el tipo de maquina para saber si es el plc general de automatica
-					print "---------------------- " + str(tipoMaq) + " ----------------------------"
-					logger.info("Maquina: " + str(tipoMaq))
-					plc_cnc = Sinoptico.Data.General.obtenerPLC_CNC(celula, num) 		# Mira si es tipo plc o cnc
-					tareas = Tareas.Data.DesviacionTareas.tareasPorMaquina(celula, referencia, tipoMaq)	# Obtiene todas las tareas por maquina
-					for valorTarea in tareas:
-						tarea = valorTarea["tarea"] # Obtiene tarea por maquina
-						logger.info("Tarea: " + str(tarea))
-						print "Tarea: " + str(tarea)
-						#---DESCARGA-------------------------------------------------------------------------------
-						if tarea.startswith("Descarga"): # Si tarea comienza por Descarga (osea todas las descargas)
-							proxTarea = Tareas.Data.General.obtenerProximaFecha(celula, tipoMaq, tarea) # Obtiene cuando es la proxima fecha de una tarea
-							estadoTarea = Tareas.Data.DesviacionTareas.accionesDescarga(celula, proxTarea) # 0: Mantener igual, 1: Completado, 2: Poner a 20min, 3: Descargar YA!
-							if estadoTarea != 0:
+		# Tareas.Data.DesviacionTareas.desviacionesTareas()
+		"""
+		Repasa los tiempos de produccion por cada tarea de cada maquina y celula.
+		Si hay alguna desviacion actualiza el dataset de tareas llamando a la funcion correspondiente
+		Si hay tareas completadas tambien las actualiza.
+		"""
+		#---PARAMETROS--------------------------------------------------
+		celulas = constantes.celulas
+		tp = constantes.tag_provider
+		manual = 0 # Significa que se ha hecho automaticamente y no de manera manual
+		#---------------------------------------------------------------
+		logger = system.util.getLogger('Prueba JD')
+		
+		for celula in celulas:
+			print "======================== CELULA " + str(celula) + " ========================"
+			# Numero de maquinas por celula
+			path = tp + "Celula" + celula
+			total = len(system.tag.browse(path, {"name": "Maq_*"})) # Mira el numero de tags dentro de una carpeta, que empiecen por "Maq_"
+			referencia = Sinoptico.Data.General.obtenerReferencia(celula)		# Obtener referencia
+			logger.info("Celula: " + str(celula))
+			for num in range(1, total + 1):
+				try:
+					conexion = Sinoptico.Data.General.obtenerConexion(celula, num)
+					print "------ Numero: " + str(num) + " ------"
+					print "------ Conexion: " + str(conexion) + " ------"
+					if conexion == 'Good':
+						tipoMaq = Sinoptico.Data.General.obtenerTipoMaquina(celula, num)	# Mira el tipo de maquina para saber si es el plc general de automatica
+						print "---------------------- " + str(tipoMaq) + " ----------------------------"
+						logger.info("Maquina: " + str(tipoMaq))
+						plc_cnc = Sinoptico.Data.General.obtenerPLC_CNC(celula, num) 		# Mira si es tipo plc o cnc
+						tareas = Tareas.Data.DesviacionTareas.tareasPorMaquina(celula, referencia, tipoMaq)	# Obtiene todas las tareas por maquina
+						for valorTarea in tareas:
+							tarea = valorTarea["tarea"] # Obtiene tarea por maquina
+							logger.info("Tarea: " + str(tarea))
+							print "Tarea: " + str(tarea)
+							#---DESCARGA-------------------------------------------------------------------------------
+							if tarea.startswith("Descarga"): # Si tarea comienza por Descarga (osea todas las descargas)
+								proxTarea = Tareas.Data.General.obtenerProximaFecha(celula, tipoMaq, tarea) # Obtiene cuando es la proxima fecha de una tarea
+								estadoTarea = Tareas.Data.DesviacionTareas.accionesDescarga(celula, proxTarea) # 0: Mantener igual, 1: Completado, 2: Poner a 20min, 3: Descargar YA!
+								if estadoTarea != 0:
+									rpt = Tareas.Data.General.obtenerRitmoProd(celula, referencia, tipoMaq) # Obtenemos el ritmo de produccion
+									ocurrencia = Tareas.Data.General.obtenerOcurrencia(celula, referencia, tipoMaq, tarea) # Obtenemos ocurrencia
+									if estadoTarea == 1: # Completar tarea
+										Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+									elif estadoTarea == 2: # Poner a 20 min
+										Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, 20) # Actualiza las tareas con un desfase de 20 min
+									elif estadoTarea == 3: # Descargar YA!
+										Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, -1) # Establece la primera tarea ya! Y actualiza el resto de tareas
+							
+							#---VERIFICACION--------------------------------------------------------------------------
+							if tarea.startswith("Verificación"): # Si tarea comienza por Verificación (osea todas las verificaciones)
+								estado = Tareas.Data.DesviacionTareas.accionesVerificacion(tarea, num, referencia, celula, tipoMaq)
+								if estado:
+									# Estado true. se completa la tarea
+									Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+							
+							#---CAMBIO DE HERRAMIENTA-------------------------------------------------------------------
+							if tarea.startswith("CH"): # Si tarea comienza por CH (osea todas los cambios de herramientas)
 								rpt = Tareas.Data.General.obtenerRitmoProd(celula, referencia, tipoMaq) # Obtenemos el ritmo de produccion
 								ocurrencia = Tareas.Data.General.obtenerOcurrencia(celula, referencia, tipoMaq, tarea) # Obtenemos ocurrencia
-								if estadoTarea == 1: # Completar tarea
-									Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
-								elif estadoTarea == 2: # Poner a 20 min
-									Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, 20) # Actualiza las tareas con un desfase de 20 min
-								elif estadoTarea == 3: # Descargar YA!
-									Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, -1) # Establece la primera tarea ya! Y actualiza el resto de tareas
-						
-						#---VERIFICACION--------------------------------------------------------------------------
-						if tarea.startswith("Verificación"): # Si tarea comienza por Verificación (osea todas las verificaciones)
-							estado = Tareas.Data.DesviacionTareas.accionesVerificacion(tarea, num, referencia, celula, tipoMaq)
-							if estado:
-								# Estado true. se completa la tarea
-								Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
-						
-						#---CAMBIO DE HERRAMIENTA-------------------------------------------------------------------
-						if tarea.startswith("CH"): # Si tarea comienza por CH (osea todas los cambios de herramientas)
-							rpt = Tareas.Data.General.obtenerRitmoProd(celula, referencia, tipoMaq) # Obtenemos el ritmo de produccion
-							ocurrencia = Tareas.Data.General.obtenerOcurrencia(celula, referencia, tipoMaq, tarea) # Obtenemos ocurrencia
-							
-							if tipoMaq == "TORNO":
-								vidaTotal = Tareas.Data.DesviacionTareas.accionesCH_CNC_Torno(celula, num)
-							elif tipoMaq == "TALLADORA":
-								vidaTotal = Tareas.Data.DesviacionTareas.accionesCH_CNC_Talladora(celula, num)
-							elif tipoMaq == "AFEITADORA":
-								vidaTotal = Tareas.Data.DesviacionTareas.accionesCH_PLC(celula, num)
-							
-							
-							# Hacemos la comprobacion para completar tarea; Torno diferente al resto
-							if tipoMaq == "TORNO" and vidaTotal != "Bad":
-								vidaHta = Sinoptico.Data.General.obtenerCNCHerramienta(celula, num)
-								# Vemos cual es el contador mas desfavorable
-								piezas = 0
-								for i in range(len(vidaHta)):
-									piezasActual = vidaHta[i][1]
-									if piezasActual > piezas:
-										piezas = piezasActual
-								# Leemos el flag de CH
-								path = tp + "Datos_Celula/Celula" + celula + "/Maq_" + str(num) + "/FlagCH"
-								path = [path]
-								valor = system.tag.readBlocking(path)
-								flag = valor[0].value
 								
-								if flag == True and piezas >= 5:
-									# Completamos tarea
-									Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
-									system.tag.writeBlocking(path, False) # Bajamos el flag
-								elif flag == False and piezas < 5:
-									system.tag.writeBlocking(path, True) # Subimos el flag
-									print "No hacer nada: CH TORNO"
-								elif flag == False and piezas >= 5:
-									# Actualizamos tarea
-									tiempoTotal = int(vidaTotal) * rpt
-									Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, tiempoTotal) # Actualiza las tareas con un desfase que indica tiempo de Tarea
-							elif (tipoMaq == "TALLADORA" or tipoMaq == "AFEITADORA") and vidaTotal != "Bad":
-								try:
-									if tipoMaq == "AFEITADORA":
-										datosHta = Sinoptico.Data.General.obtenerAutoHerramienta(celula, num)
-										piezasActuales = datosHta[1] 
-									else:
-										datosHta = Sinoptico.Data.General.obtenerCNCHerramienta(celula, num)
-										piezasActuales = datosHta[0][1]
-								except:
-									piezasActuales = 9999 
-
-								proxTarea = Tareas.Data.General.obtenerProximaFecha(celula, tipoMaq, tarea)
-								ahora = system.date.now()
+								if tipoMaq == "TORNO":
+									vidaTotal = Tareas.Data.DesviacionTareas.accionesCH_CNC_Torno(celula, num)
+								elif tipoMaq == "TALLADORA":
+									vidaTotal = Tareas.Data.DesviacionTareas.accionesCH_CNC_Talladora(celula, num)
+								elif tipoMaq == "AFEITADORA":
+									vidaTotal = Tareas.Data.DesviacionTareas.accionesCH_PLC(celula, num)
 								
-								# 1. LA CONDICIÓN DE BLOQUEO (Validación)
-								esperando_laboratorio = (vidaTotal <= 0) or system.date.isBefore(proxTarea, ahora) or (piezasActuales <= 5)
-
-								if esperando_laboratorio:
-									# Ruta del flag persistente por maquina
-									flag_path = tp + "Datos_Celula/Celula" + celula + "/Maq_" + str(num) + "/FlagCH"
-									flag_tag = [flag_path]
-
-									# Intentar comprobar GearFlow: primero CONTROL, luego HERRAMIENTA como fallback
-									valorGearFlow = None
+								
+								# Hacemos la comprobacion para completar tarea; Torno diferente al resto
+								if tipoMaq == "TORNO" and vidaTotal != "Bad":
+									vidaHta = Sinoptico.Data.General.obtenerCNCHerramienta(celula, num)
+									# Vemos cual es el contador mas desfavorable
+									piezas = 0
+									for i in range(len(vidaHta)):
+										piezasActual = vidaHta[i][1]
+										if piezasActual > piezas:
+											piezas = piezasActual
+									# Leemos el flag de CH
+									path = tp + "Datos_Celula/Celula" + celula + "/Maq_" + str(num) + "/FlagCH"
+									path = [path]
+									valor = system.tag.readBlocking(path)
+									flag = valor[0].value
+									
+									if flag == True and piezas >= 5:
+										# Completamos tarea
+										Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+										system.tag.writeBlocking(path, False) # Bajamos el flag
+									elif flag == False and piezas < 5:
+										system.tag.writeBlocking(path, True) # Subimos el flag
+										print "No hacer nada: CH TORNO"
+									elif flag == False and piezas >= 5:
+										# Actualizamos tarea
+										tiempoTotal = int(vidaTotal) * rpt
+										Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, tiempoTotal) # Actualiza las tareas con un desfase que indica tiempo de Tarea
+								elif (tipoMaq == "TALLADORA" or tipoMaq == "AFEITADORA") and vidaTotal != "Bad":
 									try:
-										valorGearFlow = Tareas.Data.GearFlow.cambioHerramientas(ahora, tipoSolicitud="CONTROL", referencia=referencia, celula=celula, herramienta=tipoMaq)
+										if tipoMaq == "AFEITADORA":
+											datosHta = Sinoptico.Data.General.obtenerAutoHerramienta(celula, num)
+											piezasActuales = datosHta[1] 
+										else:
+											datosHta = Sinoptico.Data.General.obtenerCNCHerramienta(celula, num)
+											piezasActuales = datosHta[0][1]
 									except:
+										piezasActuales = 9999 
+	
+									proxTarea = Tareas.Data.General.obtenerProximaFecha(celula, tipoMaq, tarea)
+									ahora = system.date.now()
+									
+									# 1. LA CONDICIÓN DE BLOQUEO (Validación)
+									esperando_laboratorio = (vidaTotal <= 0) or system.date.isBefore(proxTarea, ahora) or (piezasActuales <= 5)
+	
+									if esperando_laboratorio:
+										# Ruta del flag persistente por maquina
+										flag_path = tp + "Datos_Celula/Celula" + celula + "/Maq_" + str(num) + "/FlagCH"
+										flag_tag = [flag_path]
+	
+										# Intentar comprobar GearFlow: primero CONTROL, luego HERRAMIENTA como fallback
 										valorGearFlow = None
-									if not valorGearFlow:
 										try:
-											valorGearFlow = Tareas.Data.GearFlow.cambioHerramientas(ahora, tipoSolicitud="HERRAMIENTA", referencia=referencia, celula=celula, herramienta=tipoMaq)
+											valorGearFlow = Tareas.Data.GearFlow.cambioHerramientas(ahora, tipoSolicitud="CONTROL", referencia=referencia, celula=celula, herramienta=tipoMaq)
 										except:
 											valorGearFlow = None
-
-									# Leer estado del flag (si no existe, asumimos False)
-									try:
-										val = system.tag.readBlocking(flag_tag)
-										flag = bool(val[0].value)
-									except:
-										flag = False
-
-									# Si ya estaba marcado como esperando
-									if flag:
-										if valorGearFlow == 'OK':
-											logger.info("GearFlow OK detectado y FlagCH presente. Completando tarea de CH " + tipoMaq)
-											Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
-											system.tag.writeBlocking(flag_tag, [False])
-										else:
-											# Mantener congelada mientras siga sin OK
-											logger.info("CH en espera de Laboratorio (FlagCH activo). Manteniendo congelamiento.")
-											Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, 0)
-									# Si no estaba marcado, y no hay OK vamos a marcar y congelar
-									else:
-										if valorGearFlow == 'OK':
-											logger.info("GearFlow OK detectado. Completando tarea de CH " + tipoMaq)
-											Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
-										else:
-											logger.info("CH en espera de Laboratorio. Marcando FlagCH y congelando tarea.")
-											system.tag.writeBlocking(flag_tag, [True])
-											Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, 0)
-								else:
-									# 2. PRODUCCIÓN NORMAL
-									tiempoTotal = int(vidaTotal) * rpt
-									Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, tiempoTotal)
-						#---CAMBIO BANDEJA DE CARGA------------------------------------------------------------------
-						if tarea.startswith("Cambio de carga") and tipoMaq == "BIN PICKING": # La tarea es 'Cambio Bandeja Carga'
-							estadoTarea = Tareas.Data.DesviacionTareas.accionesCambioBandejaCarga(celula, num)
-							if estadoTarea == 1: # Significa que queda la mitad de las piezas
-								rpt = Tareas.Data.General.obtenerRitmoProd(celula, referencia, tipoMaq) # Obtenemos el ritmo de produccion
-								ocurrencia = Tareas.Data.General.obtenerOcurrencia(celula, referencia, tipoMaq, tarea) # Obtenemos ocurrencia
-								desfase = (int(ocurrencia/2))*rpt
-								Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, desfase) # Y pone que falta la mitad del tiempo
-							elif estadoTarea == 2: # Significa que hay que completar la tarea
-								Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
-						
-						#---CAMBIO BANDEJA DE DESCARGA---------------------------------------------------------------
-						if tarea.startswith("Cambio de carga") and tipoMaq == "CELULA": # La tarea es 'Cambio Bandeja Descarga'
-							estadoTarea = Tareas.Data.DesviacionTareas.accionesCambioBandejaDescarga(celula, num, referencia)
-							if estadoTarea:
-								# Hay que completar la tarea
-								Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
-						
-						#---GRAFICO---------------------------------------------------------------
-						if tarea.startswith("Grafico"): # Si tarea comienza por 'Grafico'
-							proxFecha = Tareas.Data.General.obtenerProximaFecha(celula, tipoMaq, tarea)
-							valor = Tareas.Data.GearFlow.grafico(proxFecha, tipoSolicitud="CONTROL", referencia=referencia, celula=celula, herramienta=tipoMaq) # Mira en Gear Flow a ver si hay un OK
-							if valor == 'OK':
-								# El valor ha dado OK asi que podemos dar la tarea como completada
-								Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
-			except Exception as e:
-				logger.error("----------ERROR dentro de Tareas.Data.DesviacionTareas.desviacionesTareas()-------------")
-				continue
-						
-	return True
+										if not valorGearFlow:
+											try:
+												valorGearFlow = Tareas.Data.GearFlow.cambioHerramientas(ahora, tipoSolicitud="HERRAMIENTA", referencia=referencia, celula=celula, herramienta=tipoMaq)
+											except:
+												valorGearFlow = None
 	
+										# Leer estado del flag (si no existe, asumimos False)
+										try:
+											val = system.tag.readBlocking(flag_tag)
+											flag = bool(val[0].value)
+										except:
+											flag = False
+	
+										# Si ya estaba marcado como esperando
+										if flag:
+											if valorGearFlow == 'OK':
+												logger.info("GearFlow OK detectado y FlagCH presente. Completando tarea de CH " + tipoMaq)
+												Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+												system.tag.writeBlocking(flag_tag, [False])
+											else:
+												# Mantener congelada mientras siga sin OK
+												logger.info("CH en espera de Laboratorio (FlagCH activo). Manteniendo congelamiento.")
+												Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, 0)
+										# Si no estaba marcado, y no hay OK vamos a marcar y congelar
+										else:
+											if valorGearFlow == 'OK':
+												logger.info("GearFlow OK detectado. Completando tarea de CH " + tipoMaq)
+												Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+											else:
+												logger.info("CH en espera de Laboratorio. Marcando FlagCH y congelando tarea.")
+												system.tag.writeBlocking(flag_tag, [True])
+												Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, 0)
+									else:
+										# 2. PRODUCCIÓN NORMAL
+										tiempoTotal = int(vidaTotal) * rpt
+										Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, tiempoTotal)
+							#---CAMBIO BANDEJA DE CARGA------------------------------------------------------------------
+							if tarea.startswith("Cambio de carga") and tipoMaq == "BIN PICKING": # La tarea es 'Cambio Bandeja Carga'
+								estadoTarea = Tareas.Data.DesviacionTareas.accionesCambioBandejaCarga(celula, num)
+								if estadoTarea == 1: # Significa que queda la mitad de las piezas
+									rpt = Tareas.Data.General.obtenerRitmoProd(celula, referencia, tipoMaq) # Obtenemos el ritmo de produccion
+									ocurrencia = Tareas.Data.General.obtenerOcurrencia(celula, referencia, tipoMaq, tarea) # Obtenemos ocurrencia
+									desfase = (int(ocurrencia/2))*rpt
+									Tareas.Data.General.programarTiemposTareas(celula, tipoMaq, tarea, ocurrencia, rpt, desfase) # Y pone que falta la mitad del tiempo
+								elif estadoTarea == 2: # Significa que hay que completar la tarea
+									Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+							
+							#---CAMBIO BANDEJA DE DESCARGA---------------------------------------------------------------
+							if tarea.startswith("Cambio de carga") and tipoMaq == "CELULA": # La tarea es 'Cambio Bandeja Descarga'
+								estadoTarea = Tareas.Data.DesviacionTareas.accionesCambioBandejaDescarga(celula, num, referencia)
+								if estadoTarea:
+									# Hay que completar la tarea
+									Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+							
+							#---GRAFICO---------------------------------------------------------------
+							if tarea.startswith("Grafico"): # Si tarea comienza por 'Grafico'
+								proxFecha = Tareas.Data.General.obtenerProximaFecha(celula, tipoMaq, tarea)
+								valor = Tareas.Data.GearFlow.grafico(proxFecha, tipoSolicitud="CONTROL", referencia=referencia, celula=celula, herramienta=tipoMaq) # Mira en Gear Flow a ver si hay un OK
+								if valor == 'OK':
+									# El valor ha dado OK asi que podemos dar la tarea como completada
+									Tareas.Secuencia.General.completarTarea(celula, referencia, tipoMaq, tarea, num, manual)
+				except Exception as e:
+					logger.error("----------ERROR dentro de Tareas.Data.DesviacionTareas.desviacionesTareas()-------------")
+					continue
+							
+		return True
+		
 def tareasPorMaquina(celula, referencia, maquina):
 	# Tareas.Data.DesviacionTareas.tareasPorMaquina(celula, referencia, maquina)
 	"""
@@ -700,4 +700,4 @@ def accionesCambioBandejaDescarga(celula, num, referencia):
     except Exception as e:
         print("Error en Tareas.Data.DesviacionTareas.accionesCambioBandejaDescarga(celula, num, referencia): " + str(e))
         return False
-	
+		
